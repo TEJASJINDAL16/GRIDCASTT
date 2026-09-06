@@ -1,0 +1,158 @@
+# gridcast configuration
+# Every tunable lives here. No magic numbers in code.
+
+project:
+  name: gridcast
+  timezone: Asia/Kolkata
+
+# --- Demand data (Electricity Maps) ---
+demand:
+  provider: electricity_maps
+  base_url: https://api.electricitymap.org/v3     # confirmed by probe
+  range_path: /power-breakdown/past-range
+  target_field: powerConsumptionTotal             # this is demand, in MW
+  primary_zone: IN-NO          # Northern India — includes Delhi
+  all_zones: [IN-NO, IN-WE, IN-SO, IN-EA, IN-NE]
+  granularity: hourly
+  backfill_start: "2021-01-01"
+  # Rows with isEstimated == true are TIME_SLICER_AVERAGE fill-ins, not
+  # measurements. Cached so we can reason about revisions, never trained on.
+  train_on_estimated: false
+
+# --- Weather (Open-Meteo) ---
+# One representative point per zone. Chosen as the dominant load centre,
+# since aggregate demand is driven mostly by the largest population cluster.
+weather:
+  provider: open_meteo
+  archive_url: https://archive-api.open-meteo.com/v1/archive
+  forecast_url: https://api.open-meteo.com/v1/forecast
+  variables:
+    - temperature_2m
+    - relative_humidity_2m
+    - apparent_temperature
+    - precipitation
+    - cloud_cover
+    - wind_speed_10m
+    - shortwave_radiation
+  points:
+    IN-NO: {name: Delhi,     lat: 28.6139, lon: 77.2090}
+    IN-WE: {name: Mumbai,    lat: 19.0760, lon: 72.8777}
+    IN-SO: {name: Bengaluru, lat: 12.9716, lon: 77.5946}
+    IN-EA: {name: Kolkata,   lat: 22.5726, lon: 88.3639}
+    IN-NE: {name: Guwahati,  lat: 26.1445, lon: 91.7362}
+
+# --- Feature engineering ---
+# Thresholds are starting values. Find the real elbow from the data and
+# replace them; do not leave a guess in place once it can be measured.
+features:
+  cooling_threshold_c: 24.0
+  heating_threshold_c: 15.0
+  rolling_temp_windows_h: [24, 72, 168]
+  # Passed to BOTH stages. The Ridge stage sees only these.
+  linear_stage_features: [cooling_degrees, heating_degrees, trend]
+  monotone_increasing: [cooling_degrees, heating_degrees]
+
+# --- Data quality ---
+quality:
+  train_on_estimated: false        # INV-3
+  score_on_estimated: false        # INV-4
+  # Suppressed demand (INV-8): flag hours where demand is flat or falling
+  # while temperature rises. Values provisional until measured.
+  suppression_temp_rise_c: 1.0
+  suppression_demand_delta_pct: 0.0
+
+# --- Splits ---
+# All relative to available history. Never fixed dates, never random.
+splits:
+  tuning_window_months: 12         # earliest slice; search here only (INV-7)
+  walk_forward_folds: 12
+  fold_step: monthly
+  min_initial_train_months: 24
+  holdout_months: 12               # untouched until the project is finished
+  purge_gap_days: 10               # ASSUMPTION - measure via demand_revisions
+  early_stopping_weeks: 8
+
+# --- Training ---
+train:
+  target_transform: log            # train on log(demand), report MW
+  correct_retransformation_bias: true
+  recency_half_life_days: 365
+  min_history_days: 180
+  per_zone_sample_weighting: false # only if measurement shows a zone dominating
+
+# --- Forecast error simulation (see 5d) ---
+# Bridge only. Once ~6 months of archived vintages exist, train on the real
+# forecasts instead and delete this.
+forecast_noise:
+  enabled: true
+  day_bias_sigma_c: 1.2            # ASSUMPTION - measure from vintages
+  hour_wobble_sigma_c: 0.5         # ASSUMPTION - measure from vintages
+
+# --- Hyperparameter tuning ---
+tuning:
+  method: optuna
+  n_trials: 100
+  log_to_mlflow: true
+  # Retraining does NOT retune. These are frozen between deliberate searches.
+
+# --- Evaluation ---
+evaluate:
+  # Most recent MEASURED value for the same hour and weekday, at least
+  # purge_gap_days before issue time. Not simply "last week".
+  baseline: seasonal_naive
+  peak_hours: [18, 19, 20, 21, 22]
+  # Selection procedure - see 5g
+  selection_primary: mase
+  selection_co_primary: rmsse       # must improve or hold; blocks trading
+                                    # many small errors for a few large ones
+  mase_variant: out_of_sample       # denominator = our baseline, same rows
+  shortfall_threshold_pct: 3.0      # under-forecast by more than this = shortfall
+  tail_percentile: 95
+  ramp_window_hours_ist: [17, 18, 19, 20, 21]
+  # Never report a single headline number.
+  stratify_by: [temperature_band, hour_of_day, zone, day_type]
+  report_settled_fraction: true     # monitoring counterpart of row counts
+  temperature_bands_c: [20, 30, 40, 45]
+  report_row_counts: true
+
+# --- Drift triggers ---
+# Thresholds are DERIVED from the phase 1 backtest error distribution, not
+# chosen by hand, and are absolute once set - never recomputed from recent
+# performance (see 5f / section 6).
+drift:
+  thresholds_derived: false        # flip to true once the backtest has run
+  rolling_window_days: 30
+  monitor_alarm_days: 90           # no trigger this long -> check the monitor
+  # --- settlement lag (see 5g) ---
+  window_ends_at: settlement_frontier   # NOT today; window lags the present
+  score_policy: frozen                  # monitoring/triggers freeze; backtest is live
+  settlement_frontier_replay: true      # calibrate thresholds under live conditions
+  settlement_lag_days: null             # ASSUMPTION - measure via demand_revisions
+
+# --- Failure policy (see 5h) ---
+# Degrade with disclosure, skip when no honest output is possible, fail fast
+# only when continuing would corrupt stored state.
+failure:
+  # ASSUMPTION - set this where a stale forecast stops beating the
+  # no-weather baseline, measured from the vintage archive. See 13.
+  max_forecast_vintage_age_hours: 72
+  retry_interval_minutes: 15           # weather API outage: keep trying
+  retry_window_hours: 4                # then keep the degraded forecast
+  # No climatology fallback by design - the previous vintage is always better
+  # and needs no extra mechanism. See 5h.
+  min_zones_to_publish: 1
+  max_gap_fraction: 0.05               # per fold; above this, mark unreliable
+  max_consecutive_failures: 3          # then stop retrying and escalate
+  fail_on_missing_config_key: true
+  fail_on_placeholder: false           # run, but flag it in the output
+
+# --- Dashboard (see 15) ---
+dashboard:
+  output_dir: docs                 # GitHub Pages serves this directory
+  history_days: 10                 # forecasts shown; error only where settled
+  zones: all                       # pre-rendered per zone, toggled client-side
+  chart_format: svg
+  show_baseline_line: true         # INV-5 - no error figure without its baseline
+  show_row_counts: true
+  draw_trigger_thresholds: true    # warning before firing, not after
+  quantile_bands: false            # phase 1b

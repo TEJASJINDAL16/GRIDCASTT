@@ -1,0 +1,19 @@
+# secrets — never commit
+.env
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# data: raw pulls are reproducible, cached history is NOT — see note in README
+data/raw/*
+!data/raw/.gitkeep
+data/interim/*
+!data/interim/.gitkeep
+
+# os
+.DS_Store
