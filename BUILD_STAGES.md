@@ -74,7 +74,15 @@ way nothing downstream can detect.
 - Network access to `api.electricitymap.org` and `open-meteo.com`
 - Docker installed and running
 - The GitHub repo created, **public**, with push access working
-- A DVC remote the human can authenticate (see the prompt for options)
+- **DVC remote: Google Drive, OAuth route.** The folder is already created and
+  its ID is **`1Mrc2dxh8Ds5Q-GsyaSb-7ctaP6maH6be`**. Configure with
+  `dvc remote add -d gdrive gdrive://1Mrc2dxh8Ds5Q-GsyaSb-7ctaP6maH6be`;
+  the first `dvc push` opens a browser once and caches a token in
+  `.dvc/tmp/gdrive-user-credentials.json` (gitignored). Do **not** use a service
+  account — service accounts have no Drive storage quota of their own and the
+  upload fails. If `dvc push` returns a rate-limit error, that is DVC's shared
+  OAuth app being throttled globally, not a problem with this repo; the fix is a
+  personal OAuth client ID, and you should ask before setting one up.
 
 ### Build
 
@@ -284,7 +292,9 @@ No deployment. No dashboard beyond what the replay needs.
 
 ### Requires from the human
 
-- GitHub Secrets set: `EM_API_KEY`, and the DVC remote credential
+- GitHub Secrets set: `EM_API_KEY`, and `GDRIVE_CREDENTIALS_DATA` — the contents
+  of `.dvc/tmp/gdrive-user-credentials.json`, which DVC reads from that
+  environment variable in CI
 - GitHub Pages enabled on the repo
 - Confirmation that the repo is public
 

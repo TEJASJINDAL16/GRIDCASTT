@@ -17,3 +17,9 @@ data/interim/*
 
 # os
 .DS_Store
+
+# dvc credentials — INV-6
+/.dvc/tmp
+/.dvc/cache
+/.dvc/config.local
+.dvc/tmp/gdrive-user-credentials.json
