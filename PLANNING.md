@@ -215,15 +215,29 @@ compound error across 24 steps for no benefit.
 **RULE** Never define the target as a delta from a lagged actual.
 
 *Rationale:* delta-from-seasonal-naive requires last week's same-hour actual
-at issue time, but the ~9 day revision lag means that anchor is still
-estimated. It would bake a dependency on unsettled data into the target
+at issue time, but that anchor may still be estimated — the settlement lag is
+unmeasured (13) and `purge_gap_days` is deliberately conservative. It would bake a dependency on unsettled data into the target
 definition itself. Note this does not affect the Phase 2 regional correction
 layer, whose residual is taken from the base model's prediction, not from a
 lagged actual.
 
-**RULE** One daily job at issue time performs, in order: score settled
-forecasts, update drift metrics, evaluate triggers, retrain if triggered,
-issue the forecast, publish.
+**RULE** One daily job at issue time performs, **in this order and no other**.
+This sequence is canonical; sections 6 and 14 refer to it and must not restate
+it differently.
+
+```
+1  archive the weather forecast vintage, observed weather, demand revisions (5d)
+2  score forecasts whose rows have reached the settlement frontier (5g)
+3  update rolling error and signed bias (6)
+4  evaluate trigger conditions, apply routing and cooldown (6)
+5  retrain and run the promotion gate, if and only if step 4 authorised it (6)
+6  build features and issue the 24-hour forecast (5b)
+7  publish the dashboard (15)
+```
+
+*Rationale:* publication is last because the dashboard must show today's
+forecast and today's trigger outcome. Retraining precedes issuing so that a
+promoted challenger is the model that issues today.
 
 ### Phase 1b — quantile forecasts
 
@@ -339,8 +353,10 @@ top bin, and predicts the final training period's level **permanently**.
 
 Unlike a heatwave this is not an edge case. **Every forecast is outside the
 training range in the time dimension, by definition**, and the gap widens for
-as long as the model runs. With demand growing around 5% a year, a model
-trained on four years and predicting the fifth lands roughly 11% low — on
+as long as the model runs. The tree pins to the level of its final training
+period, so with demand growing around 5% a year — itself an unmeasured
+assumption (13) — a forecast a year past the training boundary lands about 5%
+low, and the shortfall compounds for as long as the model is not retrained. On
 every hour, always in the same direction.
 
 A line keeps rising. That is the entire reason the linear stage exists.
@@ -383,7 +399,10 @@ This is only possible because temperature is split into two one-sided terms —
 demand is U-shaped in raw temperature, so monotonicity cannot be declared on
 it.*
 
-**RULE** Correct the retransformation bias when inverting the log.
+**RULE** Correct the retransformation bias when inverting the log, using
+**Duan's smearing estimator**: multiply `exp(prediction)` by
+`mean(exp(residual))` computed on that fold's training residuals, per zone.
+Applied once, to the summed two-stage prediction, never to a stage separately.
 `exp(mean(log x))` understates `mean(x)`.
 
 #### Two different Ridge models — do not confuse them
@@ -395,8 +414,8 @@ it.*
 
 Same algorithm, different feature sets, different jobs.
 
-*Note on the hybrid Stage 1: with three uncorrelated features on ~175,000
-rows the L2 penalty barely binds, so it is close to plain least squares. Ridge
+*Note on the hybrid Stage 1: with three uncorrelated features on a matrix of
+order 10^5 rows the L2 penalty barely binds, so it is close to plain least squares. Ridge
 is used because the linear feature list is configurable and under test — if it
 grows, those features will be correlated and the penalty starts doing real
 work.*
@@ -432,8 +451,8 @@ folds then stop being an honest estimate. Nested cross-validation is the
 rigorous alternative and costs 12x the compute for little gain here; tuning
 once on a reserved window and freezing is sufficient, provided it is stated.
 
-**RULE** Search with Optuna, of the order of 100 trials. Log every trial to
-MLflow — parameters, score, duration.
+**RULE** Search with Optuna, of the order of 100 trials. Optuna keeps its own
+trial storage; MLflow receives one summary run for the study (14) — parameters, score, duration.
 
 *Optuna learns which regions of the space are promising and samples there,
 converging faster than random search, which in turn beats grid search per unit
@@ -446,7 +465,7 @@ likely to matter more:
 |---|---|
 | `recency_half_life_days` | how fast old data loses influence |
 | `cooling_threshold_c` | where the elbow actually sits — measure it, do not assume 24 |
-| number of piecewise cooling breakpoints | one straight ramp vs a bending curve |
+| number of piecewise cooling breakpoints | Phase 2 only. Phase 1 uses the single ramp max(0, T - cooling_threshold_c); a multi-breakpoint form would add cooling_degrees_1..n and is not specified here |
 | Ridge `alpha` | regularisation of the linear stage |
 
 LightGBM side: `num_leaves`, `learning_rate`, `min_data_in_leaf`,
@@ -465,6 +484,9 @@ the data has shifted enough to justify it.
 
 All splits are chronological. Never split randomly, never split by zone.
 All five zones appear in both sides of every split; the boundary is time.
+
+*The single sanctioned exception is the Phase 2 leave-one-zone-out experiment
+(section 5), which is a diagnostic and never trains a production model.*
 
 Defined relative to available history, not as fixed dates:
 
@@ -509,19 +531,29 @@ going to run.
 **RULE** Purge gap: training data within each fold ends **10 days before** the
 fold's test period begins.
 
-*Rationale:* rows settle from estimated to measured after roughly nine days,
-and INV-3 forbids training on estimated rows. So at any real issue time the
-newest usable training row is about ten days old. A backtest without this gap
+*Rationale:* rows settle from estimated to measured after some lag, and INV-3
+forbids training on estimated rows, so the newest usable training row at any
+real issue time is `purge_gap_days` old. **The lag itself is unmeasured** — one
+observed row took two days (5d, 13) — and 10 is a deliberately conservative
+placeholder, not a finding. Never quote it as a measured settlement lag. A backtest without this gap
 trains on data that would not have existed at decision time — the error is
 invisible and it inflates every result. This is the single easiest way to
 produce a backtest number that cannot be reproduced in production.
 
-**RULE** Early stopping: hold out the last 8 weeks of each fold's training
-window as a validation set to select the iteration count, then refit on the
-full training window using that count.
+**RULE** Early stopping: hold out the last `splits.early_stopping_weeks` of each
+fold's training window as a validation set to select the iteration count, then
+refit on the full training window using that count **scaled by the row ratio**
+`n_full / n_train_minus_validation`, rounded up.
+
+*The validation slice sits at the end of the training window, before the purge
+gap, and recency weights apply inside it exactly as in training.*
 
 *The validation slice is the most recent part of training, never a random
 sample.*
+
+**RULE** The first fold boundary sits no earlier than
+`splits.min_initial_train_months` after the end of the tuning window. Folds that
+would train on less than that are not run.
 
 **RULE** Filter to measured rows before splitting, not after.
 
@@ -530,7 +562,8 @@ value for the same hour and same weekday, at least `purge_gap_days` before the
 issue time.*
 
 *Rationale:* "same hour last week" is ambiguous under a settlement lag — last
-week's value may still be estimated at issue time, and INV-4 forbids using it.
+week's value may still be estimated at issue time, and a baseline built on an
+estimated row is not under the same information constraint as the model.
 Reaching back to the most recent **measured** matching hour puts the baseline
 under exactly the same information constraint as the model. A baseline allowed
 to see data the model cannot is not a fair comparison, and it is precisely the
@@ -614,7 +647,7 @@ The **Stage** column says which half of the hybrid consumes each feature —
 | `temperature` | tree | Open-Meteo | the dominant driver |
 | `cooling_degrees` | **linear** + tree | `max(0, T - cooling_threshold_c)` | see below — kept for three reasons, none of which is helping the tree |
 | `heating_degrees` | **linear** + tree | `max(0, heating_threshold_c - T)` | the other half of the temperature decomposition — see below |
-| `trend` | **linear** + tree | days since start | year-on-year growth; without it the model targets the multi-year average and runs 5-7% low |
+| `trend` | **linear** + tree | days since `demand.backfill_start`, fixed origin | year-on-year growth; without it the tree pins to the final training period's level and runs low, by roughly the growth rate per year of staleness (5c) |
 | `zone` | tree | data column, native categorical | five pooled series; without it the model predicts an average of five and matches none |
 
 **RULE** Features marked `linear + tree` are passed to **both** stages. The
@@ -634,13 +667,14 @@ about Indian winters.
 **RULE** Everything else is a measured candidate, added one at a time and kept
 only if the ablation shows it earning its place. Candidates: humidity, dew
 point, apparent temperature, rolling temperatures (24h/72h/168h), consecutive
-hot days, cloud cover, shortwave radiation, wind at 100m, precipitation,
+hot days, cloud cover, shortwave radiation, wind speed, precipitation,
 festival proximity, cricket match days, explicit interactions.
 
 **RULE** No demand lag features in Phase 1.
 
 *Rationale:* lead time is 14-38h, so `t-24h` does not exist for later target
-hours, and anything under about ten days old is still estimated. A model that
+hours, and anything newer than `purge_gap_days` is treated as possibly still
+estimated. A model that
 uses no recent demand and still beats seasonal naive has proved its weather
 relationship is real, rather than being a persistence model in disguise.
 
@@ -679,16 +713,23 @@ following day. Taking `dayofweek` from the UTC timestamp mislabels the first
 hour of every forecast, and the same error silently shifts every holiday
 lookup by a day.
 
-**RULE** Compute `cooling_degrees` per city, then aggregate to the zone. Never
-average temperature first and transform after.
+**RULE** Compute `cooling_degrees` per city, then aggregate to the zone,
+load-weighted. Never average temperature first and transform after.
+
+*Phase 1 configures exactly one point per zone (`weather.points`), so the rule is
+inert as configured and no weights exist yet. It is written now because it is an
+invariant that must hold the moment a second city is added — a Phase 2 candidate
+— and because retrofitting it later silently changes every temperature feature.*
 
 *Rationale:* the transform is nonlinear, so the transform of the average is not
 the average of the transforms. Delhi at 40 C and Shimla at 20 C average to
-30 C giving 6 cooling degrees, where the correct weighted answer is nearer 13.
+30 C giving 6 cooling degrees, where the correct load-weighted answer is 8 with
+equal weights and higher still once Delhi's far larger load is weighted in.
 The error is largest on the hottest days, which is exactly where it matters
 most.
 
-**RULE** `gen_solar_mw` is not a feature. It is analysis material only — the
+**RULE** `gen_solar_mw` — the solar entry of the Electricity Maps power
+breakdown, in MW — is not a feature. It is analysis material only — the
 duck curve and solar-penetration trend.
 
 *Rationale:* tomorrow's solar generation is not known at issue time. Using it
@@ -729,7 +770,7 @@ The five principles are ordered. Each is a precondition for the next.
 headline figure alone.
 
 *Rationale:* if 5% of hours carry 15% error and 95% carry 2%, the overall
-figure is 2.6% and the failure is invisible. An average cannot show you a
+figure is 2.65% and the failure is invisible. An average cannot show you a
 failure confined to a minority of cases, and the minority is the entire point.
 
 **RULE** Temperature band is the primary stratification and is mandatory in
@@ -768,7 +809,8 @@ A model that faithfully fits biased data is confidently wrong, and nothing
 downstream can detect it.
 
 **RULE** Detect hours where demand plateaus or falls while temperature
-continues rising. Flag them, and exclude or downweight them in training.
+continues rising. Flag them and **exclude** them from training. Not downweight —
+INV-8 admits no partial weight.
 
 *Rationale:* the source reports power **consumed**, not power **wanted**. When
 the grid sheds load, consumption is capped by supply and the recorded value
@@ -814,8 +856,15 @@ cannot learn — never to trust it to generalise on its own.**
 
 Two separate obligations.
 
-**RULE** When an input exceeds the training range, flag the forecast as
-extrapolating, widen its uncertainty band, and surface both on the dashboard.
+**RULE** When a **weather** input exceeds the training range — `cooling_degrees`
+or `heating_degrees`, listed in `features.extrapolation_check` — flag the
+forecast as extrapolating and surface it on the dashboard. In Phase 1b, also
+widen its uncertainty band.
+
+*Rationale for the narrow scope:* `trend` is outside the training range on every
+forecast by construction (5c), so a check across all features would flag every
+row, forever. Band widening is Phase 1b because Phase 1 emits a point forecast
+and there is no band to widen.
 
 *Rationale:* a forecast the model cannot support must be labelled. Presented
 identically to a confident one, it removes the operator's ability to apply
@@ -861,21 +910,22 @@ Training data topped out at 46 C. Tomorrow's forecast says 48 C at 20:00.
 1  FEATURE        cooling_degrees = 48 - 24 = 24
                   training maximum was 22          <- outside the data
 
-2  RIDGE          45,000 + 800 x 24 = 64,200 MW
+2  RIDGE          log space: base 10.71 + 0.015 x 24 = 11.07
                   the line does not care that 24 is unprecedented
 
 3  TREE           seeks a split above cooling_degrees 22, finds none,
                   falls back to its top bin
-                  contributes +1,100 MW (evening, weekday, June)
+                  contributes +0.017 on the residual (evening, weekday, June)
 
-4  PREDICTION     65,300 MW
+4  PREDICTION     exp(11.07 + 0.017) x smearing  ->  ~65,300 MW
 
-                  for comparison: a tree alone would say ~62,000 MW,
-                  flat above its top split - 3,300 MW low, silently
+                  for comparison: a tree alone would flatten above its
+                  top split and say ~62,000 MW - 3,300 MW low, silently
 
 5  RANGE CHECK    24 > 22  ->  flag EXTRAPOLATING
 
-6  UNCERTAINTY    band widened from +/-2% to +/-6%
+6  UNCERTAINTY    Phase 1b only - band widened. Phase 1 emits the flag
+                  and the marker, no band.
 
 7  DASHBOARD      shown with a warning marker, not as a normal number
 
@@ -909,19 +959,33 @@ metric for all three is the common failure.
 PRIMARY      MASE, mean across folds
 CO-PRIMARY   RMSSE - must improve or hold
 
-VETO if:     worse in the top temperature band
-             signed bias outside threshold
-             shortfall frequency increased
-             P95 absolute percentage error regressed
+VETO if:     top temperature band worse by more than
+                 evaluate.veto_tolerance.top_band_pct
+             |signed bias| worse by more than
+                 evaluate.veto_tolerance.signed_bias_pct
+             shortfall frequency up by more than
+                 evaluate.veto_tolerance.shortfall_freq_pct
+             P95 abs % error up by more than
+                 evaluate.veto_tolerance.p95_pct
 
-TIEBREAK     fold win rate, then simplicity
+TIEBREAK     fold win rate, then fewer features, then fewer
+             tuned parameters at their bound
 
 DIAGNOSTIC   RMSE/MAE ratio, reported alongside
 ```
 
+**RULE** Every veto is a **tolerance**, never a bare inequality. Each tolerance
+is derived from that metric's own fold-to-fold spread in the step 9 backtest and
+recorded in section 13.
+
+*Rationale:* "worse in the top temperature band" with no tolerance vetoes on a
+0.001% move, and the `> 45 C` band has the fewest rows in the table, so its
+fold-to-fold variation is the largest. An untoleranced veto rejects every
+challenger on noise from the smallest sample in the report.
+
 *Rationale for the co-primary:* MASE is built on mean **absolute** error,
 which is linear and therefore treats errors as interchangeable regardless of
-size. Ten 200 MW misses and one 1,100 MW miss give the same MAE and the same
+size. Ten 200 MW misses and one 2,000 MW miss give the same MAE and the same
 MASE — but a grid absorbs the first and has an incident on the second.
 Requiring RMSSE to improve as well means a model cannot win by trading many
 small errors for a few large ones. Both must move, so it has to be genuinely
@@ -951,12 +1015,12 @@ figure.
 | RMSE | sqrt(mean((a-p)^2)) MW | large misses count more, matching real cost | outlier-sensitive |
 | MASE | see formulas below | is it beating the baseline at all | an average |
 | RMSSE | see formulas below | penalises large misses, baseline included | outlier-sensitive |
-| Signed bias | mean(p-a) | direction, not accuracy | says nothing about magnitude |
+| Signed bias | mean((p-a)/a), percent | direction, not accuracy | says nothing about magnitude |
 | Shortfall frequency | % hours p < a by more than `shortfall_threshold_pct` | operational risk in the dangerous direction | ignores over-forecast |
 | P95 abs % error | 95th percentile of \|a-p\|/a | how bad it gets, not how bad on average | tail only |
-| Peak error | error on the day's maximum | capacity is booked against peak | one hour per day |
-| Ramp error | \|delta_a - delta_p\| per hour | shape rather than level | noisier by construction |
-| Ramp MASE | ramp error / baseline ramp error | makes ramp error interpretable | — |
+| Peak error | error at the hour of the day's **actual** maximum | capacity is booked against peak | one hour per day |
+| Ramp error | \|delta_a - delta_p\| per hour, over `ramp_window_hours_ist` | shape rather than level | noisier by construction |
+| Ramp MASE | ramp error / the seasonal-naive baseline's ramp error, same rows | makes ramp error interpretable | — |
 
 *Two of these carry more weight than their position suggests.*
 
@@ -1013,16 +1077,22 @@ when those rows are still estimated.
 
 **RULE** The 30-day monitoring window ends at the **settlement frontier** — the
 newest timestamp for which all expected rows have settled to measured — not at
-today. It is a fixed-width window that lags the present.
+today. It is a fixed-width window that lags the present. The frontier is computed
+**per zone** for per-zone triggers, and as the earliest of the five for the
+pooled figure.
 
-*Rationale:* a window ending at today holds roughly 28 days of scorable rows, not
-30, and on a slow settlement day holds 25. Sample size would then move with
+*Rationale:* a window ending at today holds `30 - settlement_lag` days of
+scorable rows rather than 30, and fewer still on a slow settlement day. Sample size would then move with
 pipeline health rather than with model quality, and a rolling metric whose
 denominator wobbles is not measuring what its name says.
 
-**RULE** Score every settled row. Do not wait for a day to complete. Report
-**settled fraction** alongside every monitoring figure, exactly as row counts are
-reported alongside every evaluation figure.
+**RULE** Score every settled row as it settles. Do not wait for a day to
+complete. This governs the **score archive** — the audit trail, and the
+dashboard's pending tail — not the trigger window, which is frontier-terminated
+and therefore always fully settled.
+
+**RULE** Report **settled fraction** alongside every monitoring figure, measured
+against the rows expected **up to today**, not against the window.
 
 *Rationale:* unsettled rows are not a random sample. If estimation clusters at
 particular hours or zones — plausible, since it fills reporting gaps and reporting
@@ -1049,7 +1119,8 @@ that were settled as of D, reconstructed from `data/raw/demand_revisions/`.
 holds its full complement of rows. The live monitor never sees that — it always
 works at the frontier, with fewer rows and therefore more variance. A threshold
 calibrated on backtest variance and applied to a noisier live metric fires more
-often than designed, and section 6 already names the consequence: a trigger that
+often than designed, and the Monitoring rationale above names the consequence: a
+trigger that
 fires spuriously gets ignored. This is point-in-time correctness applied to
 monitoring rather than to features, and it is possible only because 5d archives
 revisions. Until enough revision history exists, calibrate on the fully settled
@@ -1064,10 +1135,10 @@ detection delay  =  settlement lag  +  window for the signal to emerge
 *Rationale:* for the rolling-error and signed-bias triggers this is immaterial —
 they watch for drift that moves over months. For the structural-break trigger it is
 a real limit: that trigger exists to catch shocks, speed is its entire purpose, and
-it cannot see the two most recent days because those measurements do not exist yet.
-There is no fix. "Detects shocks" and "detects shocks about three days after they
-begin, because that is when meter data settles" are different claims, and only the
-second survives a follow-up question.
+it cannot see the most recent `settlement_lag_days` because those measurements do
+not exist yet. There is no fix. "Detects shocks" and "detects shocks roughly
+`settlement_lag_days + 1` after they begin, because that is when meter data
+settles" are different claims, and only the second survives a follow-up question.
 
 ### Phase 1b — quantiles
 
@@ -1156,7 +1227,7 @@ level.
 | **Gaps in cached history** | Log the gap, exclude those rows. If a fold's gap fraction exceeds `max_gap_fraction`, mark that fold's result unreliable in the report rather than dropping it silently. |
 | **Retrain triggered, training errors** | Keep the champion. Promote nothing. Alert. Retry on the next trigger, not immediately. |
 | **Challenger trains but loses** | Not a failure — the gate working. Log the comparison and keep the champion. |
-| **Fewer than 24 hourly values produced** | Skip publication entirely. Never publish a partial day. |
+| **Fewer than 24 hourly values produced for a zone** | Skip that zone. Never publish a partial day for it. Other zones publish normally, per the row above. |
 | **Config placeholder unreplaced** (see 13) | Run, but propagate a `placeholder_in_use` flag into the output metadata and onto the dashboard. |
 | **Missing required config key** | Fail fast at startup. Do not substitute a default. |
 
@@ -1260,7 +1331,6 @@ shared by degradation and by the extrapolation warnings in 5f.
 ```
 flags: []                        normal
 flags: [stale_weather_24h]       degraded input
-flags: [climatology_fallback]    heavily degraded
 flags: [extrapolating]           input outside training range (5f)
 flags: [placeholder_in_use]      a config assumption is unreplaced (13)
 ```
@@ -1268,9 +1338,18 @@ flags: [placeholder_in_use]      a config assumption is unreplaced (13)
 **RULE** Flags propagate to the dashboard and into the stored forecast record.
 A flagged forecast is visually distinct from a clean one.
 
-**RULE** Flagged rows are excluded from headline accuracy figures and reported
-separately. A model should not be blamed for a climatology fallback, nor
-credited for one.
+**RULE** Rows carrying an **input-degradation** flag — `stale_weather_*` — are
+excluded from headline accuracy figures and reported separately. A model should
+not be blamed for a stale input, nor credited for one.
+
+**RULE** `extrapolating` and `placeholder_in_use` do **not** exclude a row.
+`extrapolating` rows are reported in their temperature band (5f); a
+`placeholder_in_use` row is labelled, per section 13.
+
+*Rationale:* several placeholders are only measurable after weeks of live
+running, so every early forecast carries `placeholder_in_use`. Excluding those
+rows would leave the headline metric and both drift metrics with no rows at all,
+disabling the monitor the flags exist to protect.
 
 ### Operational
 
@@ -1289,23 +1368,42 @@ checkable at all.
 
 ## 6. Retraining policy
 
-**RULE** The nightly job is a **monitoring** job. Retraining is one action it
+**RULE** The daily job is a **monitoring** job. Retraining is one action it
 may choose to take. It is not a retraining schedule.
 
-Every night, unconditionally:
-1. Fetch the previous day's actuals
-2. Score forecasts whose rows have settled to measured
-3. Update rolling error and signed bias
-4. Publish the dashboard
-5. Evaluate trigger conditions
+It runs once a day at issue time — 10:00 IST, not overnight — in the canonical
+order given in 5b. Steps 1 to 4 and step 7 of that sequence are unconditional;
+only step 5 depends on a trigger.
 
-**RULE** Retrain only when a trigger fires:
+**RULE** Retrain only when a trigger fires. The three triggers are defined
+exactly as follows.
 
-| Trigger | Condition | Catches |
-|---|---|---|
-| Rolling error | 30-day MAPE leaves the backtest-established band | Obvious degradation |
-| Signed bias | Error consistently one-directional beyond threshold | Concept drift, earlier than raw error |
-| Structural break | Sharp single-day deviation | Shocks — heatwave, lockdown, grid event |
+| | Rolling error | Signed bias | Structural break |
+|---|---|---|---|
+| **statistic** | 30-day rolling MAPE on settled rows | 30-day rolling mean of *signed* percentage error | single-day MAPE |
+| **compared to** | upper bound from the replay | symmetric ± bound from the replay | much higher bound from the replay |
+| **debounce** | 3 consecutive days | 3 consecutive days | none — already a single-day statistic |
+| **scope** | pooled **and** per zone | pooled **and** per zone | per zone |
+| **catches** | obvious degradation | concept drift, earlier than raw error | shocks — heatwave, lockdown, grid event |
+| **on firing** | retrain attempt | retrain attempt | **alert and watch** — see below |
+
+**RULE** Signed bias is reported broken out by lead time as well as pooled.
+
+*Rationale:* random error cancels when summed with sign; systematic error
+accumulates. So the signed mean has a far lower noise floor than MAPE and moves
+first for the same underlying problem. For this model the first suspect behind a
+persistent bias is `trend` — the only feature guaranteed to sit outside its
+training range on every forecast, and therefore the term that goes stale first. A
+trend problem grows with lead time; a temperature problem does not.
+
+**RULE** Every trigger is evaluated per zone against that zone's own threshold,
+as well as pooled.
+
+*Rationale:* the five zones differ enormously in size. IN-NE degrading badly
+would barely move a pooled figure dominated by IN-NO. A pooled-only monitor is
+blind to precisely the failure that is easiest to miss. Detection is per zone;
+the retrain remains global, since it is one pooled model with `zone` as a
+feature.
 
 **RULE** Never retrain on a calendar schedule.
 
@@ -1335,7 +1433,255 @@ model when viewed from outside.
 **RULE** A trigger authorises an attempt, not a deployment. Promotion remains
 gated by champion/challenger comparison.
 
-**RULE** Log every trigger event with which condition fired.
+**RULE** Log every trigger event with which condition fired, whether it was
+suppressed, and why.
+
+**RULE** Simultaneous triggers need no precedence. The two error triggers
+authorise the same single action, so a day on which both fire runs **one**
+attempt, not two. A structural break firing alongside them additionally opens a
+watch; it never adds a second attempt. Log every condition that fired.
+
+### Deriving the thresholds
+
+**RULE** Thresholds are not chosen as a percentile. Choose the tolerable
+false-alarm rate and let the threshold fall out of it.
+
+```
+false_alarm_budget_per_year          (the tunable)
+        |
+replay the monitor across the whole backtest test period,
+where by construction nothing has drifted, so every firing is false
+        |
+sweep threshold x debounce, count EPISODES per simulated year
+        |
+keep the tightest combination that stays inside the budget
+```
+
+**RULE** The unit counted is the **episode**, not the breach-day. A maximal run
+of consecutive firing days is one episode, and a new episode cannot begin until
+the cooldown has expired.
+
+*Rationale:* consecutive 30-day windows share 29 of their 30 days, so breaches
+arrive in clumps rather than scattered — one problem produces a run, not a
+sprinkle. Each episode costs exactly one retrain attempt; breach-days cost
+nothing. Counting days would make an 18-day clump look like eighteen alarms and
+would drive the threshold far looser than it needs to be. This is also the
+reason a percentile cannot be used: a percentile measures the fraction of days,
+which is not the quantity anyone cares about, and cannot be converted into
+episodes without knowing the correlation structure.
+
+*Rationale:* a 95th-percentile band breaches on roughly 5% of windows with
+nothing wrong — about one false trigger every twenty days — and 5g already names
+the consequence: a trigger that fires spuriously gets ignored,
+leaving a monitor that is trusted and dead (5g, Monitoring). The false-alarm rate must be a
+measured number, not a hope. Overlapping 30-day windows are heavily
+autocorrelated, so the firing rate of "3 consecutive days above threshold"
+cannot be computed on paper; it can be measured in one replay pass. It is also
+the defensible answer: "set so the monitor produces at most two false retrains
+a year, measured over 12 months of replay" survives a follow-up question that
+"the 99th percentile" does not.
+
+**RULE** Thresholds are stored together with the git sha of the backtest that
+produced them. A mismatch between that sha and the current model **disarms** the
+monitor rather than firing on stale numbers.
+
+*Rationale:* change the features and the error distribution moves, so the old
+thresholds no longer mean what they meant.
+
+**RULE** The replay uses the walk-forward model **as refit at every fold**, not a
+single model frozen for the whole test period.
+
+*Rationale:* the two give different thresholds and this document must not leave
+the choice open. A refreshed model is always current, so every wobble in its
+rolling error is forecasting difficulty — some months are simply harder — which
+is exactly the noise floor a false alarm must sit above. A frozen model also
+accumulates genuine ageing degradation, and calibrating against that would fold
+the signal into the noise, producing a threshold loose enough never to fire on
+the ageing it exists to catch. The frozen replay is a separate and useful
+experiment — it measures how fast a champion decays, which is what justifies the
+cooldown lengths — but it does not set the threshold.
+
+**RULE** Where several threshold-and-debounce combinations sit inside the budget,
+choose between them by measured detection delay on **injected drift**, never by
+preference.
+
+```
+replay again, shifting predictions by d from a chosen day,
+for d in {2%, 5%, 10%}; count days until each surviving
+combination fires
+```
+
+*Rationale:* the budget says how much sensitivity may be spent; it does not say
+what to spend it on. A tight threshold with a long debounce catches small
+persistent drift and reacts slowly to shocks; a loose threshold with a short
+debounce does the reverse, at identical false-alarm cost. Injected drift turns
+that into a measurement. Where two combinations are close, prefer the one that
+catches small drift, since a large shock will also reach the structural-break
+trigger.
+
+**RULE** Three kinds of firing are counted separately. Only the first spends the
+budget.
+
+| | what it is | spends |
+|---|---|---|
+| false alarm | fires while the model is healthy and unchanged | the budget |
+| true positive | fires because something genuinely changed | nothing |
+| echo | fires after a fix, because the rolling window is still stale | nothing — suppressed by cooldown |
+
+*Rationale:* the budget is measured on a replay containing no promotions, so an
+echo cannot appear in it and cannot consume it. Conflating the three makes the
+budget look overspent when it is not, and invites loosening a threshold that was
+correct.
+
+**RULE** The post-promotion watch threshold is derived by the same procedure,
+swept over 7-day windows rather than 30.
+
+*Rationale:* fewer rows means a noisier statistic, so its threshold comes out
+looser. That looseness must be measured, not assumed.
+
+**RULE** While `drift.thresholds_derived` is false, the daily job computes,
+records and publishes every metric and **cannot fire any trigger**. The
+dashboard shows *monitor not armed*.
+
+*Rationale:* a half-configured system that makes an arbitrary decision on day
+one is the silent failure of section 9 in its purest form.
+
+### Routing — is it the model, or is it the data?
+
+**RULE** A met trigger condition is not yet a retrain. Every trigger passes
+through this check first.
+
+```
+trigger condition met
+  |
+  |-- within-band error unchanged, only the mix of conditions moved?
+  |        -> DATA DRIFT. Log, annotate the dashboard, do NOT retrain.
+  |-- suppression flags present on those rows (INV-8)?
+  |        -> data exclusion, not a trigger
+  |-- ingest validation failed, or settled fraction too low?
+  |        -> pipeline alert, or too early to judge. Not a trigger.
+  |-- bands degraded across the board and bias leaning one way?
+           -> CONCEPT DRIFT. Authorise a retrain attempt.
+```
+
+*Rationale:* the same headline number has two opposite meanings. A three-week
+heat patch raises overall MAPE from 3.2% to 5.1% while every temperature band
+stays flat and only the row counts move — the model is unchanged and is simply
+being asked more of the hard questions. Genuine drift raises overall MAPE to the
+same 5.1% with every band degraded and bias leaning. The stratified error table
+of 5g is what separates them, and it is already computed for the dashboard, so
+this is a comparison rather than new machinery.
+
+**RULE** Retraining during an anomalous weather patch is forbidden even if the
+error trigger fires.
+
+*Rationale:* the relationship has not changed, so there is nothing to learn, and
+recency weighting would overweight an unrepresentative few weeks. Where the
+patch exceeds the training range — 48 C against a training maximum of 46 — the
+linear stage is extrapolating and some under-forecast bias is expected and is a
+real limitation. The response is still to flag those forecasts as extrapolating
+and keep the data. It becomes genuinely valuable at the *next* legitimate
+retrain, when the model gains extreme examples it never had. An anomalous patch
+is a poor reason to retrain and an excellent thing to have retrained on later.
+
+### Structural break — alert, not action
+
+**RULE** A structural break raises an alert, flags the published forecast
+low-confidence, and opens a **watch**. It does not itself authorise a retrain.
+
+```
+day 0     alert, flag forecasts low-confidence, open watch
+day 1-6   |-- deviation gone            -> close the watch, log it, no retrain
+          |-- 3 of 7 days breach        -> escalate to a retrain trigger
+```
+
+*Rationale:* a shock is one or two days of data buried under years of history —
+there is nothing to retrain on yet, and the settlement lag of 5g means it cannot
+even be seen until it is already days old. Escalation waits until there is
+something to learn from, and stops one strange day discarding a working
+champion.
+
+### Cooldown
+
+**RULE** After a promotion, the **30-day trigger metrics** authorise no new
+retrain attempt for 30 days. After a rejection, 14 days. After an attempt that
+failed with an error, 14 days. Measurement and publication continue throughout;
+only the *action* is suppressed, and every suppressed firing is logged and shown.
+
+*The cooldown scopes the 30-day metrics only. The 7-day post-promotion watch
+stays live inside it — see below.*
+
+*Rationale for the failure case:* a training error promotes nothing and rejects
+nothing, so without its own cooldown the still-breached trigger fires again the
+next day and keeps firing, which is both the daily-retrain loop this section
+forbids and an unbudgeted overspend, since the budget is counted in episodes and
+an episode is defined as ending at a cooldown.
+
+*Rationale:* the rolling window still contains the old model's errors after a
+promotion. Worked through with a 4.5% band, healthy error 3.2% and drifted error
+6.4%: the trigger fires on day 15, the fix is promoted, and the 30-day figure
+then sits **frozen at 4.80% from day 15 to day 30** — not slowly improving, flat,
+because healthy days are entering the front while healthy days leave the back and
+the bad block in the middle is untouched. It first drops below the band on day
+33. Without a cooldown that is eighteen consecutive daily retrains after the
+problem was already solved, each challenger differing from the champion by one
+day of data — the exact calendar retrain schedule this section forbids. A
+rejection gets 14 days for the same reason inverted: if the challenger lost
+today, one more day of data will not change that.
+
+**RULE** Do not reset the window on promotion, and do not evaluate the trigger
+on days-since-promotion only.
+
+*Rationale:* resetting leaves no monitoring metric for 30 days beginning at the
+riskiest moment in the system's life. A growing window of 1, 2, 3 days is far
+noisier than the 30-day sample the threshold was calibrated for, so the threshold
+does not apply to it.
+
+**RULE** During a cooldown the 30-day trigger metric is suppressed, but the
+7-day **post-promotion watch** — computed over the current champion's forecasts
+only — stays **live and may escalate to a retrain trigger**.
+
+```
+during cooldown:
+  30-day trigger metric   suppressed (stale, echoing the old model)
+  7-day champion watch    LIVE, can escalate
+```
+
+*Rationale:* the trigger metric answers "should we act" and gives no signal at
+all for roughly fifteen days after a fix. The watch answers "did the fix work"
+within the week. More importantly, a cooldown that suppressed everything would
+leave the system blind for thirty days beginning at the moment it had just
+changed the model — when a new problem is most likely and least expected. The
+watch is the only metric in that period uncontaminated by the old model's
+errors, by construction: it is computed solely from forecasts the new champion
+issued. Suppressing the echo and covering the blind spot are therefore the same
+mechanism used twice, not two mechanisms.
+
+**RULE** An escalation from the watch resets the cooldown. It does not stack.
+
+### What the retrain attempt is
+
+**RULE** A triggered retrain uses the same architecture and the same
+hyperparameters as the champion. It never retunes.
+
+*Rationale:* re-searching hyperparameters against recent performance makes
+choices using the test period. That is how a test set becomes training data —
+through the experimenter rather than the code (INV-7). Hyperparameter search is a
+separate deliberate act on the reserved tuning window.
+
+**RULE** The attempt trains on full history with recency weighting (section 7),
+through the settlement frontier rather than through today, and is scored against
+the champion on the standard folds using the selection procedure of 5g. Either
+outcome writes a promotion decision record with the five pins (section 14).
+
+### Liveness
+
+**RULE** The daily job must write a scoring record with n > 0 every day. A day
+without one is a pipeline alert the next morning.
+
+*Rationale:* the 90-day no-trigger alarm is a real check but a slow one. A dead
+monitor should be caught in a day, not a quarter. Keep both — the daily record as
+the fast net, the 90-day alarm as the slow one.
 
 ---
 
@@ -1370,14 +1716,15 @@ conflate them.
 | `src/config.py` | the only module that reads config or secrets |
 | `src/ingest/` | API clients — one module per external source |
 | `scripts/` | entry points, invoked via the Makefile |
-| `data/raw/` | cached API pulls (gitignored) |
-| `data/interim/` | derived datasets (gitignored) |
+| `data/raw/` | cached API pulls and archives; DVC-tracked, ignored via DVC generated entry |
+| `data/interim/` | derived datasets; DVC-tracked, ignored via DVC generated entry |
 | `reports/` | backtest output, logs, charts |
-| `state/` | committed append-only records: scores, drift history, promotion log |
-| `models/` | champion pointer (`.dvc`), promotion records |
+| `state/` | committed append-only records: `scores/`, `drift/`, `promotions/` (the promotion decision records of 14) |
+| `models/` | champion pointer (`.dvc`) only |
 | `mlruns/` | MLflow file store (DVC-tracked) |
 | `tests/` | one test per invariant, plus the feature contract test |
 | `.github/workflows/` | `daily.yml`, `retry.yml`, `ci.yml` (see 14) |
+| `reports/model_card.md` | training ranges, per-band degradation, replaced placeholders |
 | `docs/` | the published dashboard — static HTML + SVG, served by Pages (see 15) |
 | `Dockerfile` | the pinned environment, published to GHCR |
 | `.env` | secrets. **Gitignored. Never commit, never print, never echo.** |
@@ -1439,13 +1786,18 @@ from, with nothing erroring. Enforced by a contract test in CI (see 14).
 **Do not implement anything below without asking first.** These are open by
 intent, not by oversight.
 
-- Milestones and timeline
+- Timeline and dates (the milestone *content* is fixed in 12 and 14)
 
 ---
 
 ## 11. Verified facts
 
 Established by direct probe. Do not re-derive or guess.
+
+**RULE** API responses arrive in camelCase (`isEstimated`, `updatedAt`,
+`createdAt`). `src/ingest/` converts every field to snake_case on write, and
+every downstream reference — features, validation, invariants — uses the
+snake_case form. There is exactly one conversion point.
 
 ### Electricity Maps — probed 2026-09-03
 
@@ -1466,7 +1818,7 @@ Established by direct probe. Do not re-derive or guess.
 
 *Because the licence expires, historical data is cached to disk early. Every
 downstream step reads the cache, so training, backtests and charts survive the
-key lapsing. Only the live nightly update depends on the API.*
+key lapsing. Only the live daily update depends on the API.*
 
 ### Open-Meteo
 
@@ -1516,10 +1868,20 @@ src/
   viz/
     plots.py                shared chart code. The backtest report and the
                             dashboard both call this. Never two chart paths.
+  validate.py               schema, range, gap and timezone checks on every
+                            ingest. Fails loudly and refuses to write (14)
+  features/
+    forecast_noise.py       the 5d training-time weather noise injection.
+                            Applied to raw temperature BEFORE the degree
+                            transforms, since max(0, .) is nonlinear
   jobs/
-    daily.py                the single daily job (see 5b)
+    daily.py                the single daily job, in the canonical order of 5b
 scripts/
   backfill.py               one-off history pull                  [exists]
+  archive_daily.py          vintage + revision archiving, from step 0c
+  ablate.py                 feature-group ablation (5e)
+  model_card.py             writes reports/model_card.md - training ranges,
+                            per-band degradation, replaced placeholders
   tune.py                   Optuna search on the tuning window
   report.py                 dashboard + backtest report
 ```
@@ -1548,19 +1910,27 @@ the assumed one.
 0a  Dockerfile + ci.yml          pin the environment and start the invariant
                                  tests BEFORE any result is produced in it
 0b  dvc init + remote            artifacts versioned from the first run
+0c  scripts/archive_daily.py     START THE ARCHIVE NOW. Weather vintages and
+                                 demand revisions are unrecoverable if delayed
+                                 (5d), and nothing later can reconstruct them
 
  1  ingest/calendar_in.py        holidays, festivals, IST conversion
  2  features/quality.py          suppressed-demand detection
  3  features/build.py            the core feature set from 5e
- 4  backtest/metrics.py          MAPE, stratified, signed bias
- 5  models/baselines.py          seasonal naive first
- 6  backtest/splits.py           boundaries and purge gap
+ 4  backtest/splits.py           boundaries and purge gap
+ 5  models/baselines.py          seasonal naive (needs the purge gap from 4)
+ 6  backtest/metrics.py          MAPE, stratified, signed bias
+                                 (MASE/RMSSE denominators need 5)
  7  backtest/run.py              walk-forward, BASELINES ONLY
         --> first milestone: the number the project must beat
  8  models/hybrid.py             Ridge stage, then LightGBM on the residual
  9  backtest/run.py              same folds, now with the model
         --> second milestone: the first honest comparison
 10  scripts/tune.py              Optuna on the tuning window, freeze to config
+10a RE-RUN step 9                with the frozen parameters. This re-run is the
+                                 BACKTEST OF RECORD - every threshold, tolerance
+                                 and reported figure derives from it, not from
+                                 the untuned step 9
 11  monitor/drift.py             thresholds derived from step 9 backtest
 12  monitor/registry.py          champion/challenger
 13  jobs/daily.py                wire it together
@@ -1572,8 +1942,19 @@ the assumed one.
 number with no meaning, and the temptation to skip step 7 is exactly why so
 many projects have no baseline.
 
-**RULE** Drift thresholds (step 11) are derived from the step 9 backtest error
-distribution. They are not chosen by hand.
+**RULE** Drift thresholds (step 11) are derived from the **step 10a** backtest —
+step 9 re-run with frozen hyperparameters — never from the untuned step 9 and
+never by hand.
+
+*Rationale:* 5c requires hyperparameters frozen before the walk-forward that
+counts, and section 6 disarms the monitor when the threshold's backtest sha does
+not match the current model. Deriving thresholds from step 9 and then tuning at
+step 10 would change the sha and permanently disarm the monitor on first run.
+
+**RULE** Until `data/raw/demand_revisions/` holds enough history to replay the
+settlement frontier, thresholds are calibrated on the fully settled backtest and
+recorded as **provisionally optimistic**, per 5g. `settlement_frontier_replay`
+stays false until then.
 
 **RULE** Both step-0 commands must be run by the repository owner, not by an
 assistant. Both API hosts are blocked at the egress proxy in the assistant
@@ -1614,8 +1995,16 @@ that was always guessed.
 | `quality.suppression_*` | provisional | inspect flat-topped hot hours against known shedding events | step 0 |
 | `train.recency_half_life_days` | 365 | Optuna sweep | step 10 |
 | `train.per_zone_sample_weighting` | false | per-zone loss contribution after the log transform | step 9 |
-| `drift.*` thresholds | not set | the step 9 backtest error distribution | step 9 |
-| `forecast_error_sigma` | not set | archived forecast vintages vs observed | ~6 weeks of daily runs |
+| `drift.thresholds.*` | null | replay sweep against `false_alarm_budget_per_year` — see 6 | step 10a |
+| `drift.debounce_days` | 3 | same sweep; threshold and debounce are chosen together | step 10a |
+| `drift.cooldown_after_*_days` | 30 / 14 / 14 | window length and observed recovery time in a frozen-model replay | step 10a |
+| `drift.watch_threshold` | null | same replay sweep, 7-day windows | step 10a |
+| `forecast_noise.day_bias_sigma_c` | 1.2 | archived forecast vintages vs observed: sd of the per-day mean error | ~6 weeks of daily runs |
+| `forecast_noise.hour_wobble_sigma_c` | 0.5 | same archive: sd of the within-day residual after removing the day bias | ~6 weeks of daily runs |
+| `evaluate.veto_tolerance.*` | not set | fold-to-fold spread of each veto metric in the step 10a backtest | step 10a |
+| `train.ridge.alpha`, `train.lightgbm.*` | null | Optuna search on the tuning window | step 10 |
+| `demand_growth_pct_per_year` | ~5 assumed in 5c | fit a trend on zone totals once history is loaded | step 0 |
+| `is_holiday` demand effect | 10-20% assumed in 5e | measure holiday vs matched non-holiday hours | step 0 |
 | `failure.max_forecast_vintage_age_hours` | 72 | score each vintage age against actuals; find where it stops beating the no-weather baseline | ~8 weeks of daily runs |
 | linear stage feature list | 3 features | experiment: does adding more help? | step 9 |
 
@@ -1725,7 +2114,7 @@ only on a destroyed runner is not an archive.
 never by a hand-written `.gitignore` line as well. A path both hand-ignored and
 DVC-tracked fails in confusing ways.
 
-### Kind B — the four pins
+### Kind B — the five pins
 
 A model is explained by code **plus** the data it was fit on, the settings it was
 given and the environment it ran in. Change one and the model changes.
@@ -1738,14 +2127,15 @@ given and the environment it ran in. Change one and the model changes.
 | environment | Docker image digest |
 | randomness | seed, in config like everything else |
 
-*The settings pin is free only because section 8 already requires every tunable
-to live in one file. Scattered defaults would need a fifth pin, and it would be
-the one people forget.*
+*The settings pin costs nothing only because section 8 already requires every
+tunable to live in one file. Scattered defaults would need a sixth pin, and it
+would be the one people forget.*
 
-**RULE** Every promotion writes a JSON promotion record to `state/promotions/`
-carrying all four pins, the trigger that fired, and the metrics **as computed at
-decision time**. It is committed in the same commit that moves the champion
-pointer.
+**RULE** Every promotion **decision** writes a JSON record to
+`state/promotions/` carrying all five pins, the trigger that fired, the outcome,
+and the metrics **as computed at decision time**. A promotion commits it together
+with the champion pointer move; a rejection or a failed attempt commits it on its
+own.
 
 *Rationale:* metrics recomputed later are computed on revised data (5g), so a
 recomputed number is a different quantity wearing the same name. Record the
@@ -1779,7 +2169,7 @@ without one every archive a runner produces is destroyed with the runner.
 database. Local UI via `mlflow ui` when needed.
 
 **RULE** Log every **production retrain attempt**, including rejected
-challengers — not only development experiments. Tag each run with the four pins.
+challengers — not only development experiments. Tag each run with the five pins.
 
 *Rationale:* logging rejections is what makes the store an audit trail of a live
 system rather than a notebook by-product. "Why was the March challenger rejected"
@@ -1827,6 +2217,10 @@ context and a docs site, for checks that are twenty lines here.
 
 **RULE** Two layers only: GitHub's workflow-failure notification, and the status
 field the dashboard already carries from 5h. No monitoring stack.
+
+**RULE** Anything 5h calls an *alert* exits the workflow **non-zero**, after
+writing its status record and publishing. A skip that exits zero notifies nobody.
+A degrade exits zero — it produced an honest forecast and said so.
 
 *Rationale:* silent degradation is the enemy, and 5h already makes degradation
 visible on the page. Prometheus and Grafana exist for high-frequency service
@@ -1891,8 +2285,8 @@ step, no live updating, no login.
 frontier. The most recent days carry a forecast but no error, and are drawn as
 **pending**, never as zero error or as a perfect fit.
 
-*Rationale:* the page shows ten days of forecasts and roughly eight days of
-error, because meter data settles late (5g). A dashboard that drew the
+*Rationale:* the page shows `dashboard.history_days` of forecasts and fewer days
+of error — the difference is the settlement lag (5g). A dashboard that drew the
 unsettled tail as error would state its most visible falsehood in its most
 prominent panel, and would look better for it — which is exactly the failure
 mode this project exists to argue against. Rendering it as pending is the

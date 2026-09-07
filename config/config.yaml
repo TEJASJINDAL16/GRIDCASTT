@@ -17,7 +17,7 @@ demand:
   backfill_start: "2021-01-01"
   # Rows with isEstimated == true are TIME_SLICER_AVERAGE fill-ins, not
   # measurements. Cached so we can reason about revisions, never trained on.
-  train_on_estimated: false
+  # The authoritative switch is quality.train_on_estimated (INV-3).
 
 # --- Weather (Open-Meteo) ---
 # One representative point per zone. Chosen as the dominant load centre,
@@ -34,6 +34,7 @@ weather:
     - cloud_cover
     - wind_speed_10m
     - shortwave_radiation
+    - dew_point_2m
   points:
     IN-NO: {name: Delhi,     lat: 28.6139, lon: 77.2090}
     IN-WE: {name: Mumbai,    lat: 19.0760, lon: 72.8777}
@@ -51,6 +52,9 @@ features:
   # Passed to BOTH stages. The Ridge stage sees only these.
   linear_stage_features: [cooling_degrees, heating_degrees, trend]
   monotone_increasing: [cooling_degrees, heating_degrees]
+  # Only these are range-checked for the `extrapolating` flag. NOT trend -
+  # trend is out of range on every forecast by construction (5c/5f).
+  extrapolation_check: [cooling_degrees, heating_degrees]
 
 # --- Data quality ---
 quality:
@@ -69,6 +73,8 @@ splits:
   fold_step: monthly
   min_initial_train_months: 24
   holdout_months: 12               # untouched until the project is finished
+  # Deliberately conservative. NOT a measured settlement lag - that is
+  # drift.settlement_lag_days and is still unmeasured. See 5c / 13.
   purge_gap_days: 10               # ASSUMPTION - measure via demand_revisions
   early_stopping_weeks: 8
 
@@ -77,8 +83,22 @@ train:
   target_transform: log            # train on log(demand), report MW
   correct_retransformation_bias: true
   recency_half_life_days: 365
-  min_history_days: 180
   per_zone_sample_weighting: false # only if measurement shows a zone dominating
+  seed: 42                         # pins LightGBM subsampling and Optuna
+  retransformation: duan_smearing  # per zone, on the summed two-stage output
+  ridge:
+    alpha: null                    # DERIVED by tuning (step 10)
+    standardize: true              # trend spans 0-2000, cooling_degrees 0-25
+    fit_intercept: true
+  lightgbm:                        # all DERIVED by tuning (step 10)
+    num_leaves: null
+    learning_rate: null
+    min_data_in_leaf: null
+    feature_fraction: null
+    bagging_fraction: null
+    lambda_l1: null
+    lambda_l2: null
+    # n_estimators is NOT tuned - early stopping selects it per fold
 
 # --- Forecast error simulation (see 5d) ---
 # Bridge only. Once ~6 months of archived vintages exist, train on the real
@@ -100,7 +120,8 @@ evaluate:
   # Most recent MEASURED value for the same hour and weekday, at least
   # purge_gap_days before issue time. Not simply "last week".
   baseline: seasonal_naive
-  peak_hours: [18, 19, 20, 21, 22]
+  peak_hours_ist: [18, 19, 20, 21, 22]   # reporting window; peak ERROR is
+                                         # measured at the actual daily maximum
   # Selection procedure - see 5g
   selection_primary: mase
   selection_co_primary: rmsse       # must improve or hold; blocks trading
@@ -110,23 +131,51 @@ evaluate:
   tail_percentile: 95
   ramp_window_hours_ist: [17, 18, 19, 20, 21]
   # Never report a single headline number.
-  stratify_by: [temperature_band, hour_of_day, zone, day_type]
+  stratify_by: [temperature_band, hour_of_day, zone, day_type, lead_time, time_rolling]
   report_settled_fraction: true     # monitoring counterpart of row counts
   temperature_bands_c: [20, 30, 40, 45]
   report_row_counts: true
+  # Every veto is a tolerance, never a bare inequality. DERIVED at step 10a
+  # from each metric's own fold-to-fold spread. See 5g / 13.
+  veto_tolerance:
+    top_band_pct: null
+    signed_bias_pct: null
+    shortfall_freq_pct: null
+    p95_pct: null
 
 # --- Drift triggers ---
 # Thresholds are DERIVED from the phase 1 backtest error distribution, not
 # chosen by hand, and are absolute once set - never recomputed from recent
-# performance (see 5f / section 6).
+# performance (see 5g Monitoring / section 6).
 drift:
   thresholds_derived: false        # flip to true once the backtest has run
   rolling_window_days: 30
   monitor_alarm_days: 90           # no trigger this long -> check the monitor
   # --- settlement lag (see 5g) ---
   window_ends_at: settlement_frontier   # NOT today; window lags the present
+  # --- trigger derivation (see 6) ---
+  false_alarm_budget_per_year: 2        # THE tunable. thresholds fall out of it
+  debounce_days: 3                      # consecutive breaches before firing
+  per_zone_thresholds: true             # a pooled figure hides a small zone
+  cooldown_after_promotion_days: 30     # one full window must flush through
+  cooldown_after_rejection_days: 14
+  post_promotion_watch_days: 7          # live during cooldown - see 6
+  post_promotion_watch_escalates: true  # the cooldown's blind-spot cover
+  watch_threshold: null                 # DERIVED - 7-day window sweep
+  replay_model_mode: refreshed          # per-fold refit, never frozen
+  injected_drift_pct: [2, 5, 10]        # tiebreak sweep - see 6
+  structural_break_escalate: [3, 7]     # breach 3 of 7 days -> retrain trigger
+  thresholds_backtest_sha: null         # mismatch disarms the monitor
   score_policy: frozen                  # monitoring/triggers freeze; backtest is live
-  settlement_frontier_replay: true      # calibrate thresholds under live conditions
+  settlement_frontier_replay: false     # flip to true once demand_revisions has
+                                        # enough history; until then thresholds
+                                        # are provisionally optimistic (5g)
+  frontier_scope: per_zone              # pooled figure uses the earliest of five
+  cooldown_after_failure_days: 14       # a failed attempt cools down too (6)
+  thresholds:                           # DERIVED at step 10a - see 6
+    rolling_error:    {pooled: null, per_zone: {}}
+    signed_bias:      {pooled: null, per_zone: {}}
+    structural_break: {pooled: null, per_zone: {}}
   settlement_lag_days: null             # ASSUMPTION - measure via demand_revisions
 
 # --- Failure policy (see 5h) ---
