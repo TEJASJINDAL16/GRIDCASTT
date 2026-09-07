@@ -1829,10 +1829,11 @@ predictions. **Not yet verified** — history depth unconfirmed.
 
 - Development machine: macOS, Homebrew Python. System-wide `pip install` is
   refused (PEP 668). Use the project venv via `make setup`.
-- Both sandboxes available to the assistant block `api.electricitymap.org` and
-  `open-meteo.com` at an egress proxy. Any command hitting those APIs must be
-  run by the repository owner. All other work can be done by the assistant
-  directly.
+- Assistant sandboxes **without network access** block `api.electricitymap.org`
+  and `open-meteo.com` at an egress proxy. This is a property of the sandbox, not
+  of assistants in general: an assistant running directly on the development
+  machine reaches both hosts normally. Verify with a probe rather than assuming
+  either way — see the step-0 RULE in section 12. All other work needs no network.
 
 ---
 
@@ -1956,10 +1957,11 @@ settlement frontier, thresholds are calibrated on the fully settled backtest and
 recorded as **provisionally optimistic**, per 5g. `settlement_frontier_replay`
 stays false until then.
 
-**RULE** Both step-0 commands must be run by the repository owner, not by an
-assistant. Both API hosts are blocked at the egress proxy in the assistant
-sandboxes (see section 11, Environment). Everything after step 0 operates on
-cached files and needs no network.
+**RULE** Both step-0 commands must be run on a machine with network access to
+both API hosts. Verify that access with a probe before assuming it — some
+assistant sandboxes are behind an egress proxy that blocks both (see section 11,
+Environment) and some are not. Everything after step 0 operates on cached files
+and needs no network.
 
 ### Milestones
 
@@ -1980,16 +1982,21 @@ They exist because the specification was written before the data was pulled.
 **RULE** Replace each one with a measured value at the point in the build
 where it becomes measurable. Do not carry a placeholder past that point.
 
-**RULE** When a placeholder is replaced, record the measured value, the date,
-and how it was obtained — in the commit message and in the model card. An
-assumption that silently became a number is indistinguishable from a number
-that was always guessed.
+**RULE** When a placeholder is replaced, record it on three surfaces, each with
+a different job. An assumption that silently became a number is indistinguishable
+from a number that was always guessed.
+
+| Surface | Carries |
+|---|---|
+| this table | the measured value in place of the placeholder, followed by `(measured YYYY-MM-DD)`. Nothing more |
+| the commit message | the value, the date and the method, in prose |
+| the model card (15, step 15) | every replaced placeholder, and every one still outstanding |
 
 | Config key | Placeholder | How to measure | Measurable after |
 |---|---|---|---|
 | `features.cooling_threshold_c` | 24.0 | plot demand against temperature, find where the slope changes | step 0 |
 | `features.heating_threshold_c` | 15.0 | same plot, the cold-side inflection | step 0 |
-| `evaluate.temperature_bands_c` | 20/30/40/45 | choose so each band holds enough rows to report on | step 0 |
+| `evaluate.temperature_bands_c` | 20/30/40/45 | band occupancy, under the sufficiency rule below | step 0 |
 | `splits.purge_gap_days` | 10 | `data/raw/demand_revisions/` — how long until `is_estimated` flips | ~4 weeks of daily runs |
 | `drift.settlement_lag_days` | not set | distribution of measured-minus-created age in `data/raw/demand_revisions/`; report median and P95 | ~4 weeks of daily runs |
 | `quality.suppression_*` | provisional | inspect flat-topped hot hours against known shedding events | step 0 |
@@ -2003,10 +2010,37 @@ that was always guessed.
 | `forecast_noise.hour_wobble_sigma_c` | 0.5 | same archive: sd of the within-day residual after removing the day bias | ~6 weeks of daily runs |
 | `evaluate.veto_tolerance.*` | not set | fold-to-fold spread of each veto metric in the step 10a backtest | step 10a |
 | `train.ridge.alpha`, `train.lightgbm.*` | null | Optuna search on the tuning window | step 10 |
-| `demand_growth_pct_per_year` | ~5 assumed in 5c | fit a trend on zone totals once history is loaded | step 0 |
-| `is_holiday` demand effect | 10-20% assumed in 5e | measure holiday vs matched non-holiday hours | step 0 |
 | `failure.max_forecast_vintage_age_hours` | 72 | score each vintage age against actuals; find where it stops beating the no-weather baseline | ~8 weeks of daily runs |
 | linear stage feature list | 3 features | experiment: does adding more help? | step 9 |
+
+### Band sufficiency
+
+**RULE** Temperature bands are not chosen against a flat row floor. The top band
+is inherently the sparsest and is exactly the band that must stay separate, so a
+uniform minimum would merge away the only number that matters.
+
+```
+interior bands    >= evaluate.min_band_rows          (default 500)
+top band          kept separate regardless of count
+any band < 200    reported as "insufficient rows to judge", never as a number
+```
+
+*Rationale:* a band reported as 9.8% over n=140 invites a reader to treat it as a
+measurement. Saying the rows are insufficient is the honest form of the same
+information, and it is the 5f principle-5 position applied to the report itself.
+
+### Measured facts, recorded but not configured
+
+Neither of these is a tunable and neither becomes a config key. The model learns
+growth through `trend` and the holiday effect through `is_holiday`; putting a
+number for either in config would create a second, unused definition of something
+the model already estimates. They are measured because the document quotes them,
+and a quoted figure has to come from somewhere.
+
+| Fact | Assumed | How to measure | Measurable after | Recorded in |
+|---|---|---|---|---|
+| demand growth, % per year | ~5, in 5c | fit a trend on zone totals once history is loaded | step 0 | `reports/step0_measurements.md`, model card |
+| `is_holiday` demand effect | 10-20%, in 5e | holiday vs matched non-holiday hours | step 0 | `reports/step0_measurements.md`, model card |
 
 ### The two that matter most
 
