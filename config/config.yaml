@@ -15,6 +15,11 @@ demand:
   all_zones: [IN-NO, IN-WE, IN-SO, IN-EA, IN-NE]
   granularity: hourly
   backfill_start: "2021-01-01"
+  # The past-range endpoint refuses more than 10 days of hourly data per call:
+  #   {"error":"Date range exceeded 10 days limit for hourly data"}
+  # fetch_range treats a 4xx as unrecoverable and returns no rows, so a chunk
+  # above the limit yields an empty backfill that looks like a completed one.
+  chunk_days: 9
   # Rows with isEstimated == true are TIME_SLICER_AVERAGE fill-ins, not
   # measurements. Cached so we can reason about revisions, never trained on.
   # The authoritative switch is quality.train_on_estimated (INV-3).

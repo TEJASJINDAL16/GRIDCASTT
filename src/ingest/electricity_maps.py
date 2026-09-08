@@ -148,7 +148,7 @@ def backfill_zone(
     zone: str,
     start: datetime,
     end: datetime | None = None,
-    chunk_days: int = 30,
+    chunk_days: int = 9,        # the endpoint refuses more than 10 (demand.chunk_days)
     pause: float = 0.4,
 ) -> pd.DataFrame:
     """Pull a zone's full history in chunks and return it as one DataFrame."""
