@@ -30,12 +30,26 @@ def project_root() -> pathlib.Path:
 
 @pytest.fixture(scope="session")
 def tracked_files() -> list[pathlib.Path]:
-    """Every file git actually tracks, as absolute paths."""
-    out = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=PROJECT_ROOT, capture_output=True, text=True, check=True,
-    ).stdout
-    return [PROJECT_ROOT / p for p in out.split("\0") if p]
+    """Every file git actually tracks, as absolute paths.
+
+    Skips where there is no repository. The Docker image is a build artifact,
+    not a checkout — .dockerignore excludes .git deliberately, since shipping
+    history in the image would bloat it for no gain — so "which files does git
+    track" has no answer in there. The question is about the repository, and it
+    is asked in the CI test job and locally, where git exists.
+
+    The INV-6 checks that do not need git — that only src/config.py reads the
+    environment, and that no log or print line handles a secret — run
+    everywhere, including inside the image.
+    """
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=PROJECT_ROOT, capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pytest.skip("no git repository here (expected inside the Docker image)")
+    return [PROJECT_ROOT / p for p in proc.stdout.split("\0") if p]
 
 
 @pytest.fixture

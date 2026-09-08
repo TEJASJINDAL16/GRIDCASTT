@@ -27,6 +27,7 @@ holidays==0.104
 
 # --- reporting ---
 matplotlib==3.11.1
+tabulate==0.10.0          # pandas .to_markdown()
 
 # --- MLOps (PLANNING 14) ---
 # dvc[gdrive] — the gdrive extra is required; plain dvc cannot talk to the
