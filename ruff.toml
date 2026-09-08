@@ -1,0 +1,22 @@
+# Lint configuration (PLANNING 14: ci.yml runs invariant tests, the contract
+# test, and lint).
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes — unused imports and names, undefined references
+    "I",    # import ordering
+    "B",    # bugbear — mutable defaults, loop-variable capture
+    "UP",   # pyupgrade
+    "SIM",  # simplification
+]
+ignore = [
+    "E501",  # line length is enforced by line-length above, not per-line
+]
+
+[lint.per-file-ignores]
+# Scripts insert the project root on sys.path before importing src, so the
+# import block cannot be sorted to the top.
+"scripts/*.py" = ["E402"]

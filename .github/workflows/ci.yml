@@ -1,0 +1,67 @@
+# Continuous checks (PLANNING 14).
+#
+# Invariant tests, the feature contract test (from stage 2), and lint. Runs on
+# every push and on every pull request, because the stage-1 PR is where the
+# evidence for the stage gate lives.
+#
+# INV-6: this workflow uses no secrets at all. Nothing here can echo one.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Read-only. The daily job needs write access to commit state/; the test
+# workflow does not, and a token with rights it does not need is a standing
+# risk for no benefit.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: invariants and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Invariant tests
+        # -rs lists skipped tests with their reason, so the invariants not yet
+        # testable are visible in the log rather than absent from it.
+        run: pytest -q -rs tests/
+
+  docker:
+    name: pinned environment builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the image
+        # Build only. The GHCR push arrives at stage 5 with daily.yml, which is
+        # what actually consumes the published image.
+        run: docker build -t gridcast:ci .
+
+      - name: Run the invariant tests inside the image
+        # The image is one of the five pins (PLANNING 14). An image that builds
+        # but cannot run the tests is not a reproducible environment.
+        run: docker run --rm gridcast:ci pytest -q tests/

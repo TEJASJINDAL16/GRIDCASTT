@@ -21,7 +21,7 @@ Two things about this source drive the design here:
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import requests
@@ -97,6 +97,52 @@ def fetch_range(
     return []
 
 
+def probe_earliest(
+    key: str,
+    zone: str,
+    floor: datetime,
+    session: requests.Session | None = None,
+    window_days: int = 7,
+) -> datetime | None:
+    """Binary-search the earliest date this zone actually serves.
+
+    PLANNING 11 recorded "at least 4 years; probe did not reach the limit",
+    which is a lower bound, not a finding. `trend` is defined as days since
+    demand.backfill_start (5e), so a guessed origin is a feature definition
+    built on a guess — and more history is more folds and a longer holdout.
+
+    Costs about log2(days) requests: a dozen, not a backfill.
+    """
+    sess = session or requests.Session()
+    today = datetime.now(UTC)
+
+    def has_data(when: datetime) -> bool:
+        return bool(fetch_range(key, zone, when, when + timedelta(days=window_days), sess))
+
+    if not has_data(floor):
+        lo, hi = floor, today            # data starts somewhere after the floor
+    else:
+        log.info("  %s: data exists at the floor %s — the true start is earlier",
+                 zone, floor.date())
+        return floor
+
+    # Invariant: lo has no data, hi has data. Narrow to a day.
+    if not has_data(hi - timedelta(days=window_days * 2)):
+        log.warning("  %s: no data anywhere in [%s, now]", zone, floor.date())
+        return None
+
+    while (hi - lo).days > window_days:
+        mid = lo + (hi - lo) / 2
+        if has_data(mid):
+            hi = mid
+        else:
+            lo = mid
+        time.sleep(0.3)
+
+    log.info("  %s: earliest data around %s", zone, hi.date())
+    return hi
+
+
 def backfill_zone(
     key: str,
     zone: str,
@@ -106,7 +152,7 @@ def backfill_zone(
     pause: float = 0.4,
 ) -> pd.DataFrame:
     """Pull a zone's full history in chunks and return it as one DataFrame."""
-    end = end or datetime.now(timezone.utc)
+    end = end or datetime.now(UTC)
     sess = requests.Session()
     frames, cursor, empty_streak = [], start, 0
 

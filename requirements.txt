@@ -1,10 +1,41 @@
-requests>=2.31
-pandas>=2.1
-numpy>=1.26
-pyarrow>=15
-pyyaml>=6.0
-python-dotenv>=1.0
-matplotlib>=3.8
-lightgbm>=4.3
-scikit-learn>=1.4
-holidays>=0.45
+# gridcast dependencies — exact pins.
+#
+# Exact, not floors. The environment is one of the five pins in PLANNING 14:
+# a model is explained by code plus data plus settings plus environment, and
+# ">=2.31" pins nothing. The Docker image digest is the authoritative pin;
+# this file is what makes the image reproducible.
+#
+# Python 3.12. Do not build the venv from bare `python3` — see the Makefile.
+
+# --- ingest ---
+requests==2.34.2
+python-dotenv==1.2.3
+PyYAML==6.0.3
+
+# --- data ---
+pandas==3.0.5
+numpy==2.5.3
+pyarrow==25.0.1
+scipy==1.18.1
+
+# --- model ---
+scikit-learn==1.9.0
+lightgbm==4.7.0
+
+# --- calendar ---
+holidays==0.104
+
+# --- reporting ---
+matplotlib==3.11.1
+
+# --- MLOps (PLANNING 14) ---
+# dvc[gdrive] — the gdrive extra is required; plain dvc cannot talk to the
+# remote and fails with an unsupported-URL error.
+dvc==3.67.1
+dvc-gdrive==3.0.1
+mlflow==3.16.0
+optuna==5.0.0
+
+# --- tests and lint (PLANNING 14: ci.yml runs tests, contract test, lint) ---
+pytest==9.1.1
+ruff==0.16.6

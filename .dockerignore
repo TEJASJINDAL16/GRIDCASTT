@@ -1,0 +1,16 @@
+.git
+.venv
+.dvc/cache
+.dvc/tmp
+.env
+data/raw/*
+data/interim/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+mlruns
+__pycache__
+*.py[cod]
+.pytest_cache
+docs
+notebooks
+.DS_Store

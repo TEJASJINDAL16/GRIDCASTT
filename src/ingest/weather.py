@@ -11,7 +11,7 @@ actuals we could not have had would make the backtest lie.
 """
 
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 import pandas as pd
 import requests

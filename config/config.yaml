@@ -65,6 +65,26 @@ quality:
   suppression_temp_rise_c: 1.0
   suppression_demand_delta_pct: 0.0
 
+# --- Ingest validation (see 14) ---
+# Plain assertions on every ingest: fail loudly and refuse to write. Both APIs
+# can change shape silently, and a renamed column produces a plausible wrong
+# forecast rather than an error.
+#
+# These bounds are deliberately LOOSE. They exist to catch a unit change, a
+# renamed field or a decimal shift - not to filter data. A tight bound here
+# would silently discard real extremes, which is the failure PLANNING 5f
+# principle 2 is about.
+validate:
+  demand_mw_min: 0
+  demand_mw_max: 200000            # IN-NO peaks in the tens of GW (5c)
+  temperature_c_min: -40.0
+  temperature_c_max: 60.0
+  expected_freq_hours: 1           # both sources are hourly (11)
+  # Gaps are reported, not fatal, on cached history - PLANNING 5h says log the
+  # gap and exclude those rows. A gap in a window that should be contiguous IS
+  # fatal; callers pass contiguous=True for that case.
+  max_gap_fraction_warn: 0.05
+
 # --- Splits ---
 # All relative to available history. Never fixed dates, never random.
 splits:
@@ -135,6 +155,13 @@ evaluate:
   report_settled_fraction: true     # monitoring counterpart of row counts
   temperature_bands_c: [20, 30, 40, 45]
   report_row_counts: true
+  # Band sufficiency (PLANNING 13). Not a flat floor: the top band is the
+  # sparsest and is exactly the band that must stay separate.
+  #   interior bands  >= min_band_rows
+  #   top band        kept separate regardless of count
+  #   any band < 200  reported as "insufficient rows to judge", not as a number
+  min_band_rows: 500
+  insufficient_band_rows: 200
   # Every veto is a tolerance, never a bare inequality. DERIVED at step 10a
   # from each metric's own fold-to-fold spread. See 5g / 13.
   veto_tolerance:
