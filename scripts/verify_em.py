@@ -11,13 +11,14 @@ Paste the entire output back into the chat.
 """
 
 import json
-import sys
 import pathlib
-from datetime import datetime, timedelta, timezone
+import sys
+from datetime import UTC, datetime, timedelta
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import requests
+
 from src.config import get_api_key, load_config
 
 KEY = get_api_key("EM_API_KEY")
@@ -48,7 +49,9 @@ def limits(r):
 
 
 def probe():
-    print(L); print("STEP 1 - find a working endpoint"); print(L)
+    print(L)
+    print("STEP 1 - find a working endpoint")
+    print(L)
     for base in BASES:
         for path in PATHS:
             for name, build in AUTH:
@@ -75,15 +78,19 @@ def main():
         print("and send: base URL, the load/power path, and the auth header name.")
         return
 
-    print("\n" + L); print("STEP 2 - raw response shape"); print(L)
+    print("\n" + L)
+    print("STEP 2 - raw response shape")
+    print(L)
     print("Looking for: a value in MW, and any estimation flag.\n")
     print(json.dumps(resp.json(), indent=2)[:3000])
 
-    print("\n" + L); print("STEP 3 - how far back does history go?"); print(L)
+    print("\n" + L)
+    print("STEP 3 - how far back does history go?")
+    print(L)
     past = path.replace("/latest", "/past")
     hist = path.replace("/latest", "/history")
     for days in [1, 7, 30, 90, 180, 365, 730, 1095, 1460]:
-        when = datetime.now(timezone.utc) - timedelta(days=days)
+        when = datetime.now(UTC) - timedelta(days=days)
         hit = False
         for p in (past, hist):
             try:
@@ -101,9 +108,11 @@ def main():
             print(f"  --   {days:5d} days back ({when:%Y-%m-%d})  no data")
             break
 
-    print("\n" + L); print("STEP 4 - hourly range in one call?"); print(L)
+    print("\n" + L)
+    print("STEP 4 - hourly range in one call?")
+    print(L)
     rng = path.replace("/latest", "/past-range")
-    end = datetime.now(timezone.utc) - timedelta(days=2)
+    end = datetime.now(UTC) - timedelta(days=2)
     start = end - timedelta(days=7)
     try:
         r = requests.get(base + rng, headers=build(KEY),
@@ -125,7 +134,9 @@ def main():
     except Exception as e:
         print(f"  failed: {e}")
 
-    print("\n" + L); print("Done - paste all of the above back."); print(L)
+    print("\n" + L)
+    print("Done - paste all of the above back.")
+    print(L)
 
 
 if __name__ == "__main__":

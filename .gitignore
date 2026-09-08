@@ -7,13 +7,14 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.ruff_cache/
 .ipynb_checkpoints/
+*.egg-info/
 
-# data: raw pulls are reproducible, cached history is NOT — see note in README
-data/raw/*
-!data/raw/.gitkeep
-data/interim/*
-!data/interim/.gitkeep
+# data/ is DVC-tracked. PLANNING 14: a directory under DVC control is ignored
+# by DVC's OWN generated entry, never by a hand-written line as well — a path
+# both hand-ignored and DVC-tracked fails in confusing ways ("output is
+# git-ignored"). The entries DVC writes live in data/.gitignore and similar.
 
 # os
 .DS_Store

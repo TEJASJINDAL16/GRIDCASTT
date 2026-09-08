@@ -1,0 +1,5 @@
+outs:
+- md5: 63caacdbd39a792b4dfdff1af1e49920
+  size: 1358681
+  hash: md5
+  path: weather_IN-WE.parquet

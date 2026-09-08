@@ -1,0 +1,11 @@
+/forecast_vintages
+/weather_IN-NO.parquet
+/weather_IN-WE.parquet
+/weather_IN-SO.parquet
+/weather_IN-EA.parquet
+/weather_IN-NE.parquet
+/demand_IN-NO.parquet
+/demand_IN-WE.parquet
+/demand_IN-SO.parquet
+/demand_IN-EA.parquet
+/demand_IN-NE.parquet

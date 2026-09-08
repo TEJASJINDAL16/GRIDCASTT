@@ -316,7 +316,7 @@ Phase 1 is a **two-stage hybrid**. This is the architecture everywhere, in all
 conditions — not a special case bolted on for heatwaves.
 
 ```
-prediction = Ridge( cooling_degrees, heating_degrees, trend )
+prediction = Ridge( temperature, cooling_degrees, trend )
            + LightGBM( all features, fitted on the residual )
            then exp() back to megawatts
 ```
@@ -333,8 +333,8 @@ and any curvature the linear term missed.
 
 | Feature | Can leave training range? | Linear stage |
 |---|---|---|
+| `temperature` | yes — record heat, record cold | **yes** |
 | `cooling_degrees` | yes — record heat | **yes** |
-| `heating_degrees` | yes — record cold | **yes** |
 | `trend` | **yes — always, by definition** | **yes** |
 | `hour_of_day` | no, always 0-23 | no |
 | `day_of_week` | no, always 0-6 | no |
@@ -361,20 +361,36 @@ every hour, always in the same direction.
 
 A line keeps rising. That is the entire reason the linear stage exists.
 
-#### Why the linear stage cannot distort normal conditions
+#### What the linear stage does across the range
 
 ```
-cooling_degrees = max(0, T - 24)     zero for all T <= 24
-heating_degrees = max(0, 15 - T)     zero for all T >= 15
+temperature                                  everywhere
+cooling_degrees = max(0, T - 21.5)           zero for all T <= 21.5
 ```
 
-Between 15 C and 24 C **both are zero**, so the temperature part of Stage 1
-contributes nothing but its intercept. All variation in the comfortable band
-comes from LightGBM.
+Together these reproduce the identified two-slope shape exactly: a shallow
+slope below the breakpoint, carried by `temperature`, and a steeper one above
+it, carried by `temperature + cooling_degrees`.
 
-The linear component is dormant in the common case and only speaks when
-temperature genuinely matters. That is why the `max(0, ...)` form is used
-rather than raw temperature.
+*This section previously claimed the linear stage was dormant between 15 C and
+24 C, where `cooling_degrees` and `heating_degrees` were both zero and only the
+intercept remained. That rested on demand being U-shaped in temperature, which
+measurement has disproved — demand rises with temperature across the whole
+observed range (13). There is no dormant band, and a linear stage that was
+silent through the commonest 60% of hours would have been carrying no
+extrapolable signal there at all.*
+
+**RULE** The linear stage extrapolates **freely above** the training range and
+is **clamped at the training minimum below** it. Record the training minimum
+per fold. Governed by `features.clamp_linear_below`.
+
+*Rationale:* with a positive slope on raw temperature, an unprecedented cold
+snap extrapolates downward — the under-forecast direction that 5f Principle 4
+exists to avoid. The asymmetry is principled, not a hedge. Above the range
+there is a physical prior: hotter means more cooling load, and it is the
+direction both climate and AC penetration are moving. Below it there is no
+prior, no pooled heating load in the data, and the error leans the dangerous
+way. Cold beyond anything seen flattens rather than continuing down.
 
 #### Why the log scale makes one coefficient serve five zones
 
@@ -390,14 +406,26 @@ A percentage is scale-free where megawatts are not, so a single fitted
 coefficient is correct for every zone. The log transform chosen for the zone
 imbalance problem pays off a second time here.
 
-**RULE** Apply monotone increasing constraints on `cooling_degrees` and
-`heating_degrees` in the LightGBM stage.
+**RULE** Apply a monotone increasing constraint on **`cooling_degrees` only**
+in the LightGBM stage. Raw `temperature` is in the tree **unconstrained**.
 
 *More heat cannot mean less cooling load. With few examples above 45 C an
-unconstrained model fits noise and can produce a physically impossible dip.
-This is only possible because temperature is split into two one-sided terms —
-demand is U-shaped in raw temperature, so monotonicity cannot be declared on
-it.*
+unconstrained model fits noise and can produce a physically impossible dip.*
+
+*Why not constrain raw temperature instead, now that it carries the linear
+slope: LightGBM monotone constraints are **per-feature and global**, never
+zone-conditional. Constraining temperature would make IN-NE's measured
+cold-side rise — demand rising as it cools, -0.71 %/C within-month on 2,905
+rows (13) — structurally unrepresentable, forbidding the model from learning a
+real effect. The constraint exists to stop something absurd in the **hot tail**;
+applying it across the whole range to achieve that costs a real effect at the
+other end.*
+
+*`cooling_degrees` is zero below the breakpoint, so constraining it constrains
+the hot side and nothing else. The cold side stays free. This is also what
+gives `cooling_degrees` a job in the tree despite being a deterministic
+transform of a column already present: it is the feature that carries the
+constraint.*
 
 **RULE** Correct the retransformation bias when inverting the log, using
 **Duan's smearing estimator**: multiply `exp(prediction)` by
@@ -464,8 +492,8 @@ likely to matter more:
 | Parameter | What it controls |
 |---|---|
 | `recency_half_life_days` | how fast old data loses influence |
-| `cooling_threshold_c` | where the elbow actually sits — measure it, do not assume 24 |
-| number of piecewise cooling breakpoints | Phase 2 only. Phase 1 uses the single ramp max(0, T - cooling_threshold_c); a multi-breakpoint form would add cooling_degrees_1..n and is not specified here |
+| `temp_breakpoint_c` | where the slope actually steepens — measured at 21.5 (13), retunable |
+| number of piecewise cooling breakpoints | Phase 2 only. Phase 1 uses the single ramp max(0, T - temp_breakpoint_c); a multi-breakpoint form would add cooling_degrees_1..n and is not specified here |
 | Ridge `alpha` | regularisation of the linear stage |
 
 LightGBM side: `num_leaves`, `learning_rate`, `min_data_in_leaf`,
@@ -520,6 +548,17 @@ month.
 
 *Expanding rather than sliding, consistent with the training-window rule in
 section 7.*
+
+**RULE** The walk-forward folds straddle the `MODE_BREAKDOWN`-to-measured
+transition (11). This is a known change in the **data-generating process inside
+the test period**, and it must be stated as a caveat wherever fold results are
+reported — the backtest report, the model card and the dashboard.
+
+*Rationale:* the training span begins in the `MODE_BREAKDOWN` era and the most
+recent folds and the whole holdout are measured rows, so a fold-to-fold change
+in error can be a change in the data rather than a change in the model. Not
+stating it would leave the single most likely alternative explanation for any
+trend in the fold results unmentioned.
 
 **RULE** Within a test fold, train once at the fold boundary and issue daily
 forecasts across the month without retraining.
@@ -585,6 +624,21 @@ One row per (issued_at, location, target_datetime), with the weather variables
 and derived `lead_time_hours`.
 Written to `data/raw/forecast_vintages/`.
 
+**RULE** Rows in the vintage archive with `lead_time_hours <= 0` are **analysis
+material, not forecasts**. They are archived for completeness and must never be
+used as features, nor scored as forecasts. Every consumer of the archive filters
+on lead time before use.
+
+*Rationale:* the forecast endpoint returns the current day from 00:00, so the
+earliest rows of every vintage describe hours that had **already elapsed** when
+the forecast was issued — about 2% of a 16-day horizon. They are the provider's
+account of what just happened, not a prediction of it. Using one as a feature is
+leakage under INV-1 wearing the right column name: the column says
+`temperature_2m` and the row says the hour is in the archive, and nothing about
+the shape of the data reveals that the value was not knowable at issue time.
+`lead_time_hours` exists so the filter is trivial and so including a row is
+always an explicit decision rather than an accidental one.
+
 *Rationale:* Open-Meteo serves observed history and the current forecast, but
 not what the forecast said on a past date. So training uses observed weather
 while production is served a forecast — the model trains on perfect
@@ -644,31 +698,64 @@ The **Stage** column says which half of the hybrid consumes each feature —
 | `hour_of_day` | tree | timestamp (IST) | without it there is no daily shape at all |
 | `day_of_week` | tree | timestamp (IST) | weekday vs Sunday is a large systematic gap; weather cannot infer it |
 | `is_holiday` | tree | `holidays` + manual list | shifts demand 10-20% and is invisible in every other feature |
-| `temperature` | tree | Open-Meteo | the dominant driver |
-| `cooling_degrees` | **linear** + tree | `max(0, T - cooling_threshold_c)` | see below — kept for three reasons, none of which is helping the tree |
-| `heating_degrees` | **linear** + tree | `max(0, heating_threshold_c - T)` | the other half of the temperature decomposition — see below |
+| `temperature` | **linear** + tree | Open-Meteo | the dominant driver; carries the slope below the breakpoint and can leave the training range in both directions |
+| `cooling_degrees` | **linear** + tree | `max(0, T - temp_breakpoint_c)` | see below — kept for two reasons, neither of which is helping the tree |
 | `trend` | **linear** + tree | days since `demand.backfill_start`, fixed origin | year-on-year growth; without it the tree pins to the final training period's level and runs low, by roughly the growth rate per year of staleness (5c) |
+
+**RULE** Once training has begun, `demand.backfill_start` **never moves**.
+Changing it invalidates every derived threshold and the champion itself, and
+both must be rebuilt from scratch.
+
+*Rationale:* `trend` is days since that date, so moving the origin shifts every
+value by a constant. A constant shift is harmless to the Ridge stage, which
+absorbs it in the intercept — but every LightGBM split on `trend` is an
+**absolute number**. A tree that learned to split at `trend > 1460` keeps
+splitting there while the data underneath it has moved four years, and nothing
+errors. The drift thresholds have the same problem: they were derived from a
+backtest whose feature matrix used the old origin. This is a silent-failure
+mode of exactly the kind section 9 exists for, and the only safe response is to
+treat an origin change as a full rebuild.
 | `zone` | tree | data column, native categorical | five pooled series; without it the model predicts an average of five and matches none |
 
 **RULE** Features marked `linear + tree` are passed to **both** stages. The
 Ridge stage sees only those three; LightGBM sees everything.
 
-**RULE** `heating_degrees` is not optional, even though heating load is small
-across most of India.
-
-*Rationale:* it is not an independent driver — it is the other half of the
-temperature decomposition. Demand is U-shaped in raw temperature, so
-temperature must be split into two one-sided terms before either the monotone
-constraint or the linear extrapolation stage is possible at all. Omitting it
-leaves cold extremes with no extrapolation path and the constraint only half
-applied. It is a structural requirement of the architecture, not a judgement
-about Indian winters.
+*`heating_degrees` was here, and is deleted. Its entire justification was that
+demand is U-shaped in raw temperature, so temperature had to be split into two
+one-sided terms before either the monotone constraint or the linear
+extrapolation stage was possible. Measurement disproved the premise (13): the
+V shape is not identified on any grid, and demand rises with temperature across
+the whole observed range. Raw `temperature` now carries the below-breakpoint
+slope and the extrapolation directly, `cooling_degrees` carries the constraint,
+and a deterministic transform of a column the tree already has, offered to a
+model that gains nothing from transforms, has no remaining job. The one real
+cold-side response measured — IN-NE — the tree reaches through
+temperature x zone, with `zone` a native categorical.*
 
 **RULE** Everything else is a measured candidate, added one at a time and kept
-only if the ablation shows it earning its place. Candidates: humidity, dew
-point, apparent temperature, rolling temperatures (24h/72h/168h), consecutive
-hot days, cloud cover, shortwave radiation, wind speed, precipitation,
-festival proximity, cricket match days, explicit interactions.
+only if the ablation shows it earning its place. Candidates: **day-of-year,
+cyclically encoded**, humidity, dew point, apparent temperature, rolling
+temperatures (24h/72h/168h), consecutive hot days, cloud cover, shortwave
+radiation, wind speed, precipitation, festival proximity, cricket match days,
+explicit interactions.
+
+*On day-of-year specifically: nothing in the core set represents position in the
+year. `hour_of_day`, `day_of_week`, `is_holiday`, `temperature`,
+`cooling_degrees`, `trend` and `zone` between them carry the daily cycle, the
+weekly cycle, single flagged days, the weather and the multi-year drift — but
+not the annual cycle except through temperature. Temperature carries most of it
+and not all: not daylight length, not the agricultural pumping season, not the
+festival period beyond individually flagged days.*
+
+*There is direct evidence of the gap. IN-NE's apparent cold-side response
+measures -2.26 %/C controlling only for hour and weekday, -1.62 %/C with month
+fixed effects, and **-0.71 %/C using within-month variation alone** (13). Two
+thirds of what looked like a thermal effect was position in the year, being
+absorbed by the only feature available to absorb it. That is a feature-set gap
+showing up as a distorted temperature coefficient.*
+
+*It stays a candidate rather than joining the core set: it earns its place in
+the ablation or it does not.*
 
 **RULE** No demand lag features in Phase 1.
 
@@ -686,18 +773,23 @@ lag rules in 5g.
 
 It is a deterministic function of a column already present, so a tree can
 reconstruct it by splitting. It carries no new information. It is kept for
-three reasons:
+two reasons:
 
-1. **The Ridge baseline needs it.** Ridge on raw temperature fits one straight
-   line through an elbow and is wrong at both ends. Comparing against a
-   crippled baseline proves nothing.
-2. **It enables the monotone constraint.** Demand is U-shaped in raw
-   temperature — rising in heat and in cold — so monotonicity cannot be
-   declared on it. Split into cooling and heating degrees and each is
-   individually monotone.
-3. **The extrapolation component is built on it.** The linear term that keeps
-   rising past the training range has to be a term in something, and raw
-   temperature will not serve.
+1. **The Ridge baseline needs it.** Ridge on raw temperature alone fits one
+   straight line through a slope that steepens, and is wrong at both ends.
+   Comparing against a crippled baseline proves nothing.
+2. **It carries the monotone constraint, and nothing else can.** LightGBM
+   monotone constraints are per-feature and global. Declaring one on raw
+   temperature would forbid the measured cold-side rise in IN-NE. Because
+   `cooling_degrees` is zero below the breakpoint, constraining it constrains
+   the hot tail — where the constraint is wanted — and leaves the cold side
+   free.
+
+*A third reason stood here: that the extrapolation term had to be built on it,
+because raw temperature would not serve. That was true only while the linear
+stage excluded raw temperature, which it did because of the U-shape. Raw
+temperature is now in the linear stage and carries the extrapolation itself,
+so the reason has gone.*
 
 **RULE** Include `cooling_degrees` in the ablation and report the result
 honestly. The expected finding — that it adds little to the tree while
@@ -842,9 +934,11 @@ and they flatten.
 
 **This principle is why the architecture is a hybrid rather than a single
 model.** The mechanisms are specified in section 5c (Model architecture) and
-are not repeated here: the Ridge stage carries what must extrapolate, and
-monotone constraints let physics overrule sparse evidence where data is thin
-rather than absent.
+are not repeated here: the Ridge stage carries what must extrapolate, and the
+monotone constraint on `cooling_degrees` lets physics overrule sparse evidence
+in the hot tail, where data is thin rather than absent. Note the asymmetry —
+there is no equivalent physical prior on the cold side, which is why the linear
+stage is clamped there rather than constrained (5c).
 
 The point to carry forward is the reasoning, not the mechanism: **when a new
 situation arises outside the data, the answer is to supply structure the model
@@ -856,9 +950,12 @@ cannot learn — never to trust it to generalise on its own.**
 
 Two separate obligations.
 
-**RULE** When a **weather** input exceeds the training range — `cooling_degrees`
-or `heating_degrees`, listed in `features.extrapolation_check` — flag the
-forecast as extrapolating and surface it on the dashboard. In Phase 1b, also
+**RULE** When a **weather** input exceeds the training range — `temperature`
+or `cooling_degrees`, listed in `features.extrapolation_check` — flag the
+forecast as extrapolating and surface it on the dashboard. Below the training
+range the linear stage is additionally **clamped** (5c), so the flag says the
+forecast is outside what the model knows *and* that the cold extrapolation has
+been held flat rather than continued down. In Phase 1b, also
 widen its uncertainty band.
 
 *Rationale for the narrow scope:* `trend` is outside the training range on every
@@ -907,30 +1004,38 @@ engineering project. The target is honesty and safety at 50 C, not accuracy.*
 Training data topped out at 46 C. Tomorrow's forecast says 48 C at 20:00.
 
 ```
-1  FEATURE        cooling_degrees = 48 - 24 = 24
-                  training maximum was 22          <- outside the data
+1  FEATURES       temperature     = 48.0
+                  cooling_degrees = 48 - 21.5 = 26.5
+                  the training maximum of temperature is 48.6 in IN-NO and
+                  below 44 in every other zone, so this is at or past the
+                  edge of the data for any zone but IN-NO
 
-2  RIDGE          log space: base 10.71 + 0.015 x 24 = 11.07
-                  the line does not care that 24 is unprecedented
+2  RIDGE          both terms are live: the shallow slope on temperature
+                  everywhere, the steeper one on cooling_degrees above 21.5.
+                  the line does not care that the value is unprecedented
 
-3  TREE           seeks a split above cooling_degrees 22, finds none,
-                  falls back to its top bin
-                  contributes +0.017 on the residual (evening, weekday, June)
+3  TREE           seeks a split above its top observed cooling_degrees,
+                  finds none, falls back to its top bin
+                  contributes a small residual (evening, weekday, June)
 
-4  PREDICTION     exp(11.07 + 0.017) x smearing  ->  ~65,300 MW
+4  PREDICTION     exp(ridge + tree) x smearing
 
-                  for comparison: a tree alone would flatten above its
-                  top split and say ~62,000 MW - 3,300 MW low, silently
+                  for comparison: a tree alone would flatten above its top
+                  split and run low, silently. that gap is the reason the
+                  linear stage exists
 
-5  RANGE CHECK    24 > 22  ->  flag EXTRAPOLATING
+5  RANGE CHECK    temperature and cooling_degrees both past their training
+                  maxima  ->  flag EXTRAPOLATING
 
 6  UNCERTAINTY    Phase 1b only - band widened. Phase 1 emits the flag
                   and the marker, no band.
 
 7  DASHBOARD      shown with a warning marker, not as a normal number
 
-8  MONOTONICITY   constraint guaranteed the tree contribution could not
-                  be negative here
+8  MONOTONICITY   the constraint on cooling_degrees guaranteed the tree
+                  contribution could not be negative here. raw temperature
+                  is unconstrained, which costs nothing in the hot tail
+                  because cooling_degrees is what moves there
 
 9  EVALUATION     once settled, scored in the ">45 C" band, never folded
                   into the headline average
@@ -959,8 +1064,10 @@ metric for all three is the common failure.
 PRIMARY      MASE, mean across folds
 CO-PRIMARY   RMSSE - must improve or hold
 
-VETO if:     top temperature band worse by more than
+VETO if:     top REPORTABLE temperature band worse by more than
                  evaluate.veto_tolerance.top_band_pct
+                 (the highest band holding at least
+                  evaluate.insufficient_band_rows rows - see below)
              |signed bias| worse by more than
                  evaluate.veto_tolerance.signed_bias_pct
              shortfall frequency up by more than
@@ -979,9 +1086,26 @@ is derived from that metric's own fold-to-fold spread in the step 9 backtest and
 recorded in section 13.
 
 *Rationale:* "worse in the top temperature band" with no tolerance vetoes on a
-0.001% move, and the `> 45 C` band has the fewest rows in the table, so its
+0.001% move, and the top band has the fewest rows in the table, so its
 fold-to-fold variation is the largest. An untoleranced veto rejects every
 challenger on noise from the smallest sample in the report.
+
+**RULE** The band this veto reads is the **highest band holding at least
+`evaluate.insufficient_band_rows` rows**, not the highest band that exists. As
+measured, that is 40-45 C at 1,102 rows; the `> 45 C` band holds **25**. The
+`> 45 C` band is still computed, still reported, and still flagged insufficient
+— it simply never gates a promotion.
+
+*Rationale:* a veto evaluated on 25 rows is not a quality check, it is a coin
+toss that rejects challengers at random, and 13's band-sufficiency rule already
+says a band that thin is reported as "insufficient rows to judge" rather than as
+a number. A figure too weak to quote is too weak to veto on.
+
+*The loss is real and belongs in the model card rather than buried here: the
+band this project most wants to be good at is the one it has least evidence
+about. Twenty-five hours above 45 C, all of them in IN-NO, is what one weather
+point per zone over nine years buys. A second point per zone — a Phase 2
+candidate in 5e — is the direct remedy.*
 
 *Rationale for the co-primary:* MASE is built on mean **absolute** error,
 which is linear and therefore treats errors as interchangeable regardless of
@@ -1751,9 +1875,21 @@ functions in `src/ingest/weather.py` and must remain so.
 walk-forward only: train on the past, test on what came next. A shuffled split
 trains on the future to predict the past.
 
-**INV-3 — Never train on estimated rows.** Rows with `is_estimated == True`
-carry a `TIME_SLICER_AVERAGE` fill-in, not a measurement. Training on them
-teaches the model to reproduce an average.
+**INV-3 — Never train on rows whose `estimation_method` is not in
+`quality.trainable_estimation_methods`.** Rows with no estimation — measured —
+are always trainable. **The `is_estimated` flag alone is not sufficient**: the
+source uses three estimation methods and they are not equivalent (11). One,
+`TIME_SLICER_AVERAGE`, is the fill-in this invariant was written for, and
+training on it teaches the model to reproduce an average. Another,
+`GENERAL_PURPOSE_ZONE_MODEL`, is a modelled series measured to be roughly four
+times too smooth at the evening peak — training on it teaches under-dispersion,
+which is invisible in a MAPE headline and fatal to 5f's extremes and to INV-8.
+
+*This invariant originally asserted that `is_estimated == True` meant a
+`TIME_SLICER_AVERAGE` fill-in. That was written from a single observation and
+stated as fact; it is false for two of the three methods. Keeping the allowlist
+in config rather than in code means the decision is versioned and reviewable
+rather than buried.*
 
 **INV-4 — Score only against measured rows.** Rows are revised after
 publication. A row scored while still estimated produces error that is not
@@ -1787,6 +1923,12 @@ from, with nothing erroring. Enforced by a contract test in CI (see 14).
 intent, not by oversight.
 
 - Timeline and dates (the milestone *content* is fixed in 12 and 14)
+- **Confirmation of the estimation-tier decision.** DECIDED provisionally
+  (13): trainable methods are measured plus `MODE_BREAKDOWN`. It is provisional
+  on one test — the 2024-11-05 discontinuity check in 13. If that test finds a
+  material discontinuity, the decision is void, the trainable span becomes
+  measured-only, and **5c's split budget has to be redesigned around it. That
+  redesign is the repository owner's decision, not an implementer's.**
 
 ---
 
@@ -1810,15 +1952,60 @@ snake_case form. There is exactly one conversion point.
 | **Demand field** | **`powerConsumptionTotal`**, megawatts |
 | Timestamps | **UTC**. India is UTC+5:30 — a half-hour offset |
 | Granularity | hourly confirmed (168 rows for a 7-day window) |
-| History depth | at least 4 years; probe did not reach the limit |
+| **History depth** | **all five zones from 2017-01 (measured 2026-09-08, binary search against the floor 2015-01-01)** |
+| **Range limit** | **10 days per `past-range` call at hourly granularity (measured 2026-09-08). A longer window returns 4xx with `Date range exceeded 10 days limit for hourly data`, which `fetch_range` treats as unrecoverable — so an oversized chunk yields an empty pull that looks like a completed one** |
+| **Rate limit** | **2400 requests per 60 seconds (measured 2026-09-08, from `x-ratelimit-limit` / `ratelimit-policy`). A full five-zone backfill is roughly 340 requests, so the request budget is not a constraint** |
 | Zones | `IN-NO`, `IN-WE`, `IN-SO`, `IN-EA`, `IN-NE`, plus `IN` |
-| Estimation flags | `isEstimated` (bool), `estimationMethod` (string) |
+| Estimation flags | `isEstimated` (bool), `estimationMethod` (string). **Three methods observed, and they are not equivalent — see below** |
 | Revision behaviour | rows published as estimates are overwritten with measured values days later; visible as `updatedAt` > `createdAt` |
 | Licence | academic, non-commercial. **Attribution to Electricity Maps required in published work.** Expires 2027-03-04 |
 
 *Because the licence expires, historical data is cached to disk early. Every
 downstream step reads the cache, so training, backtests and charts survive the
 key lapsing. Only the live daily update depends on the API.*
+
+#### Estimation methods — three, not one (measured 2026-09-08)
+
+Recorded here as observation. **What follows for INV-3 is not yet decided** —
+see 10.
+
+| `estimationMethod` | Period | What it appears to be | Trainable |
+|---|---|---|---|
+| `GENERAL_PURPOSE_ZONE_MODEL` | 2017-01 to ~2020, all five zones | a modelled series, ~4x too smooth at the evening peak | no |
+| `MODE_BREAKDOWN` | ~2021 to the measured switch | the fuel-mix breakdown is estimated; the consumption total is not a fill-in | yes |
+| `TIME_SLICER_AVERAGE` | the switch boundary, and current unsettled rows | the fill-in INV-3 was written for | no |
+| *(none)* — `isEstimated == False` | from the switch | measured | yes |
+
+Row counts by method and zone, over 2017-01-01 to 2026-09-01 (measured
+2026-09-08):
+
+| Method | IN-EA | IN-NE | IN-NO | IN-SO | IN-WE |
+|---|---|---|---|---|---|
+| `GENERAL_PURPOSE_ZONE_MODEL` | 35,035 | 35,064 | 26,280 | 26,280 | 26,280 |
+| `MODE_BREAKDOWN` | 26,281 | 33,680 | 42,480 | 42,480 | 42,480 |
+| `TIME_SLICER_AVERAGE` | 308 | 289 | 287 | 287 | 287 |
+| measured | 23,091 | 15,692 | 15,697 | 15,697 | 15,697 |
+
+**The switch to measured is not simultaneous across zones.** IN-EA goes
+measured from around 2024-06; the other four switch on **2024-11-05**, with a
+short `TIME_SLICER_AVERAGE` band either side. Anything that assumes one
+project-wide settlement date is wrong for IN-EA.
+
+A `TIME_SLICER_AVERAGE` fill-in repeats: the same (hour, weekday) takes an
+identical value. Tested on 18-day samples of IN-NO, none of the tiers do.
+
+| Tier | n | distinct | exact repeats | zero hour-to-hour delta | mean abs delta |
+|---|---|---|---|---|---|
+| 2017-06 `GENERAL_PURPOSE_ZONE_MODEL` | 432 | 420 | 2.8% | 0 | 638 MW |
+| 2022-06 `MODE_BREAKDOWN` | 432 | 429 | 0.7% | 1 | 3,798 MW |
+| 2025-06 measured | 432 | 427 | 1.2% | 0 | 1,772 MW |
+
+`MODE_BREAKDOWN` is at least as variable as measured data, so its
+`powerConsumptionTotal` is not a time-slice average.
+`GENERAL_PURPOSE_ZONE_MODEL` is real-looking but **measurably smoother than
+reality** — the standard deviation across days at 18:00 IST is 1,610 MW in
+2017 against 6,780 MW in 2025 — which is the signature of a model output, and
+training on it would teach the forecaster to under-predict variance.
 
 ### Open-Meteo
 
@@ -1829,10 +2016,11 @@ predictions. **Not yet verified** — history depth unconfirmed.
 
 - Development machine: macOS, Homebrew Python. System-wide `pip install` is
   refused (PEP 668). Use the project venv via `make setup`.
-- Both sandboxes available to the assistant block `api.electricitymap.org` and
-  `open-meteo.com` at an egress proxy. Any command hitting those APIs must be
-  run by the repository owner. All other work can be done by the assistant
-  directly.
+- Assistant sandboxes **without network access** block `api.electricitymap.org`
+  and `open-meteo.com` at an egress proxy. This is a property of the sandbox, not
+  of assistants in general: an assistant running directly on the development
+  machine reaches both hosts normally. Verify with a probe rather than assuming
+  either way — see the step-0 RULE in section 12. All other work needs no network.
 
 ---
 
@@ -1956,10 +2144,11 @@ settlement frontier, thresholds are calibrated on the fully settled backtest and
 recorded as **provisionally optimistic**, per 5g. `settlement_frontier_replay`
 stays false until then.
 
-**RULE** Both step-0 commands must be run by the repository owner, not by an
-assistant. Both API hosts are blocked at the egress proxy in the assistant
-sandboxes (see section 11, Environment). Everything after step 0 operates on
-cached files and needs no network.
+**RULE** Both step-0 commands must be run on a machine with network access to
+both API hosts. Verify that access with a probe before assuming it — some
+assistant sandboxes are behind an egress proxy that blocks both (see section 11,
+Environment) and some are not. Everything after step 0 operates on cached files
+and needs no network.
 
 ### Milestones
 
@@ -1980,16 +2169,21 @@ They exist because the specification was written before the data was pulled.
 **RULE** Replace each one with a measured value at the point in the build
 where it becomes measurable. Do not carry a placeholder past that point.
 
-**RULE** When a placeholder is replaced, record the measured value, the date,
-and how it was obtained — in the commit message and in the model card. An
-assumption that silently became a number is indistinguishable from a number
-that was always guessed.
+**RULE** When a placeholder is replaced, record it on three surfaces, each with
+a different job. An assumption that silently became a number is indistinguishable
+from a number that was always guessed.
+
+| Surface | Carries |
+|---|---|
+| this table | the measured value in place of the placeholder, followed by `(measured YYYY-MM-DD)`. Nothing more |
+| the commit message | the value, the date and the method, in prose |
+| the model card (15, step 15) | every replaced placeholder, and every one still outstanding |
 
 | Config key | Placeholder | How to measure | Measurable after |
 |---|---|---|---|
-| `features.cooling_threshold_c` | 24.0 | plot demand against temperature, find where the slope changes | step 0 |
-| `features.heating_threshold_c` | 15.0 | same plot, the cold-side inflection | step 0 |
-| `evaluate.temperature_bands_c` | 20/30/40/45 | choose so each band holds enough rows to report on | step 0 |
+| `features.temp_breakpoint_c` | **21.5 (measured 2026-09-08)** — renamed from `cooling_threshold_c` | RSS-minimising breakpoint of the identified `sloped_below` fit, held-out scored | step 0 |
+| `features.heating_threshold_c` | **deleted (2026-09-08)** — no U-shape, so no cold inflection to hold a threshold | — | step 0 |
+| `evaluate.temperature_bands_c` | 20/30/40/45 | band occupancy, under the sufficiency rule below | step 0 |
 | `splits.purge_gap_days` | 10 | `data/raw/demand_revisions/` — how long until `is_estimated` flips | ~4 weeks of daily runs |
 | `drift.settlement_lag_days` | not set | distribution of measured-minus-created age in `data/raw/demand_revisions/`; report median and P95 | ~4 weeks of daily runs |
 | `quality.suppression_*` | provisional | inspect flat-topped hot hours against known shedding events | step 0 |
@@ -2003,14 +2197,41 @@ that was always guessed.
 | `forecast_noise.hour_wobble_sigma_c` | 0.5 | same archive: sd of the within-day residual after removing the day bias | ~6 weeks of daily runs |
 | `evaluate.veto_tolerance.*` | not set | fold-to-fold spread of each veto metric in the step 10a backtest | step 10a |
 | `train.ridge.alpha`, `train.lightgbm.*` | null | Optuna search on the tuning window | step 10 |
-| `demand_growth_pct_per_year` | ~5 assumed in 5c | fit a trend on zone totals once history is loaded | step 0 |
-| `is_holiday` demand effect | 10-20% assumed in 5e | measure holiday vs matched non-holiday hours | step 0 |
 | `failure.max_forecast_vintage_age_hours` | 72 | score each vintage age against actuals; find where it stops beating the no-weather baseline | ~8 weeks of daily runs |
 | linear stage feature list | 3 features | experiment: does adding more help? | step 9 |
 
+### Band sufficiency
+
+**RULE** Temperature bands are not chosen against a flat row floor. The top band
+is inherently the sparsest and is exactly the band that must stay separate, so a
+uniform minimum would merge away the only number that matters.
+
+```
+interior bands    >= evaluate.min_band_rows          (default 500)
+top band          kept separate regardless of count
+any band < 200    reported as "insufficient rows to judge", never as a number
+```
+
+*Rationale:* a band reported as 9.8% over n=140 invites a reader to treat it as a
+measurement. Saying the rows are insufficient is the honest form of the same
+information, and it is the 5f principle-5 position applied to the report itself.
+
+### Measured facts, recorded but not configured
+
+Neither of these is a tunable and neither becomes a config key. The model learns
+growth through `trend` and the holiday effect through `is_holiday`; putting a
+number for either in config would create a second, unused definition of something
+the model already estimates. They are measured because the document quotes them,
+and a quoted figure has to come from somewhere.
+
+| Fact | Assumed | How to measure | Measurable after | Recorded in |
+|---|---|---|---|---|
+| demand growth, % per year | ~5, in 5c | fit a trend on zone totals once history is loaded | step 0 | `reports/step0_measurements.md`, model card |
+| `is_holiday` demand effect | 10-20%, in 5e | holiday vs matched non-holiday hours | step 0 | `reports/step0_measurements.md`, model card |
+
 ### The two that matter most
 
-**`cooling_threshold_c`** — every cooling-degree feature, the monotone
+**`temp_breakpoint_c`** — every cooling-degree feature, the monotone
 constraint and the linear extrapolation stage are all built on it. If the real
 elbow is at 27 C and the config says 24, every one of those is subtly wrong
 from the first commit onward. **Measure it before writing `features/build.py`.**
@@ -2020,6 +2241,59 @@ from the first commit onward. **Measure it before writing `features/build.py`.**
 six days of usable training data in every fold; if they take fourteen, every
 backtest number is optimistic and cannot be reproduced in production. Neither
 error announces itself.
+
+### Recorded judgement — which estimation tiers are trainable
+
+Decided 2026-09-08. Recorded here because the reasoning is more valuable than
+the conclusion, and because the conclusion looks arbitrary without it.
+
+**The problem.** INV-3 as originally written forbade training on
+`is_estimated == True`, on the stated ground that such rows carry a
+`TIME_SLICER_AVERAGE` fill-in. That premise came from a single observation and
+was asserted as fact. Section 11 records that the source uses three estimation
+methods; only one is that fill-in. Applying the invariant literally leaves 22
+months of trainable history against the 60-month split budget of 5c — 12 tuning
++ 24 minimum initial train + 12 fold months + 12 holdout — so the specified
+walk-forward cannot run at all.
+
+**The options, and why B.**
+
+| | Trainable from | Span | Verdict |
+|---|---|---|---|
+| A — measured only | 2024-11 | 22 mo | Not available. Cannot run the 5c protocol |
+| **B — measured + `MODE_BREAKDOWN`** | ~2021-01 | ~68 mo | **Chosen** |
+| C — everything but `TIME_SLICER_AVERAGE` | 2017-01 | ~116 mo | Rejected |
+
+C is not a close call. Recency weighting at a 365-day half-life gives 2017 data
+roughly 0.2% of today's weight, so C buys almost no effective training signal
+while importing data measured to be about four times too smooth at the evening
+peak — standard deviation across days at 18:00 IST of 1,610 MW in 2017 against
+6,780 MW in 2025. Under-dispersed data is worst exactly where this project
+claims to be careful: 5f's extremes and INV-8's suppression detection both
+depend on seeing real variance. C trades the project's best argument for
+nothing.
+
+**The caveat on that reasoning.** `train.recency_half_life_days` is tuned by
+Optuna at step 10. If it comes out much longer than 365 days the
+`MODE_BREAKDOWN` era gains weight and this decision becomes more load-bearing.
+Flag it if that happens.
+
+**Why provisional.** The case for B rests on `MODE_BREAKDOWN` naming the
+fuel-mix breakdown rather than `powerConsumptionTotal`. That is an inference
+about someone else's pipeline, and consumption is normally derived from
+production plus net imports — which come from the breakdown. If the total is
+reconstructed rather than metered, B trains on 45 months of derived numbers.
+
+It is testable, because the switch has a date: at 2024-11-05 the method changes
+and the meter does not. Compare 60 days either side for a discontinuity in
+level, in hour-to-hour variance and in average daily shape, controlling for
+temperature and calendar since November is not October. No material
+discontinuity confirms B. A material discontinuity voids it — and then 5c must
+be redesigned around the measured-only span, which is the repository owner's
+decision.
+
+The test and its result are recorded in `reports/step0_measurements.md` either
+way. It is the evidence for the largest judgement call in the project.
 
 **RULE** Any figure quoted in the README, dashboard or model card that depends
 on an unreplaced placeholder must say so.

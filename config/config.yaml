@@ -14,7 +14,16 @@ demand:
   primary_zone: IN-NO          # Northern India — includes Delhi
   all_zones: [IN-NO, IN-WE, IN-SO, IN-EA, IN-NE]
   granularity: hourly
-  backfill_start: "2021-01-01"
+  # MEASURED 2026-09-08: all five zones serve data from 2017-01. The previous
+  # 2021-01-01 was a guess, and it left only ~8 months of slack against the
+  # 60-month split budget of 5c. This is also the ORIGIN OF `trend` (5e) -
+  # days since this date - so moving it redefines that feature.
+  backfill_start: "2017-01-01"
+  # The past-range endpoint refuses more than 10 days of hourly data per call:
+  #   {"error":"Date range exceeded 10 days limit for hourly data"}
+  # fetch_range treats a 4xx as unrecoverable and returns no rows, so a chunk
+  # above the limit yields an empty backfill that looks like a completed one.
+  chunk_days: 9
   # Rows with isEstimated == true are TIME_SLICER_AVERAGE fill-ins, not
   # measurements. Cached so we can reason about revisions, never trained on.
   # The authoritative switch is quality.train_on_estimated (INV-3).
@@ -46,24 +55,106 @@ weather:
 # Thresholds are starting values. Find the real elbow from the data and
 # replace them; do not leave a guess in place once it can be measured.
 features:
-  cooling_threshold_c: 24.0
-  heating_threshold_c: 15.0
+  # MEASURED 2026-09-08 (was cooling_threshold_c: 24.0, a guess). RENAMED:
+  # this is NOT an elbow above which cooling begins. Demand is monotone
+  # increasing in temperature across the whole observed range; this is the
+  # breakpoint at which an already-positive slope STEEPENS. The old name would
+  # mislead every future reader. See 13 and reports/step0_measurements.md.
+  temp_breakpoint_c: 21.5
+  # heating_threshold_c DELETED. There is no U-shape and no pooled cold-side
+  # rise, so there is no cold inflection to hold a threshold. See 13.
   rolling_temp_windows_h: [24, 72, 168]
   # Passed to BOTH stages. The Ridge stage sees only these.
-  linear_stage_features: [cooling_degrees, heating_degrees, trend]
-  monotone_increasing: [cooling_degrees, heating_degrees]
-  # Only these are range-checked for the `extrapolating` flag. NOT trend -
-  # trend is out of range on every forecast by construction (5c/5f).
-  extrapolation_check: [cooling_degrees, heating_degrees]
+  # temperature carries the slope below the breakpoint; cooling_degrees adds
+  # the steeper slope above it. Together they reproduce the identified
+  # `sloped_below` specification exactly.
+  linear_stage_features: [temperature, cooling_degrees, trend]
+  # cooling_degrees ONLY. LightGBM monotone constraints are per-feature and
+  # GLOBAL, never zone-conditional, so constraining raw temperature would make
+  # IN-NE's measured cold-side rise structurally unrepresentable. Because
+  # cooling_degrees is zero below the breakpoint, constraining it constrains
+  # the hot side and nothing else, leaving the cold side free.
+  monotone_increasing: [cooling_degrees]
+  # Range-checked for the `extrapolating` flag. NOT trend - trend is out of
+  # range on every forecast by construction (5c/5f). temperature is here now
+  # because it is a linear-stage feature and can leave the range either way.
+  extrapolation_check: [temperature, cooling_degrees]
+  # The linear stage extrapolates FREELY above the training range and is
+  # CLAMPED at the training minimum below it (5f Principle 4). Asymmetric on
+  # purpose: above the range there is a physical prior - hotter means more
+  # cooling load - and it is the direction climate and AC penetration both
+  # move. Below it there is no prior, no pooled heating load, and the error
+  # would lean toward under-forecast, which is the dangerous direction.
+  clamp_linear_below: true
 
 # --- Data quality ---
 quality:
-  train_on_estimated: false        # INV-3
+  # INV-3. The bare isEstimated flag is NOT sufficient: the source uses three
+  # estimation methods and they are not equivalent (see PLANNING 11).
+  #   MEASURED                    sentinel for isEstimated == false
+  #   MODE_BREAKDOWN              the fuel-mix breakdown is estimated; the
+  #                               consumption total is not a fill-in
+  #   GENERAL_PURPOSE_ZONE_MODEL  a modelled series, measured to be ~4x too
+  #                               smooth at the evening peak - EXCLUDED
+  #   TIME_SLICER_AVERAGE         the actual fill-in INV-3 exists for - EXCLUDED
+  # Provisional pending the 2024-11-05 discontinuity test (13).
+  trainable_estimation_methods: [MEASURED, MODE_BREAKDOWN]
+  # Per-zone trainable start (relationship test, PLANNING 13). Rows before
+  # these dates are excluded even when their estimation method is allowed,
+  # because the temperature-to-demand SLOPE moves across the switch in these
+  # two zones by more than the zone's own placebo band. The model pools rows;
+  # it does not require equal spans.
+  #   IN-NE  exceeds at 12, 15 and 18-month windows; gap stable at ~3.5 %/C
+  #   IN-EA  exceeds at 15 and 18 only - a judgement call, cheapest to exclude
+  #          because its earlier switch leaves 32 measured months
+  trainable_from:
+    IN-NE: "2024-11-05"
+    IN-EA: "2024-01-01"
+  train_on_estimated: false        # INV-3 - superseded by the allowlist above
   score_on_estimated: false        # INV-4
   # Suppressed demand (INV-8): flag hours where demand is flat or falling
   # while temperature rises. Values provisional until measured.
   suppression_temp_rise_c: 1.0
   suppression_demand_delta_pct: 0.0
+
+# --- Daily archive (see 5d) ---
+# Unrecoverable if delayed. Open-Meteo serves observed history and the CURRENT
+# forecast, but never what the forecast said on a past date, so every day
+# without archiving is a vintage that can never be reconstructed.
+archive:
+  # Store the WHOLE horizon the API returns, not only the 24 hours used. The
+  # extra hours cost nothing on the same response and give a wider range of
+  # lead times - and they are what makes a multi-day outage degrade gracefully
+  # (5h) rather than fall off a cliff.
+  forecast_days: 16                # Open-Meteo's maximum
+  vintage_dir: data/raw/forecast_vintages
+  revision_dir: data/raw/demand_revisions
+  # How far back to re-fetch demand each day looking for revisions. Must
+  # comfortably exceed the settlement lag we are trying to measure; the single
+  # observed case took two days and splits.purge_gap_days assumes 10.
+  revision_lookback_days: 21
+  # Extend the observed-weather history as the archive API releases it (5d).
+  observed_lag_days: 7
+
+# --- Ingest validation (see 14) ---
+# Plain assertions on every ingest: fail loudly and refuse to write. Both APIs
+# can change shape silently, and a renamed column produces a plausible wrong
+# forecast rather than an error.
+#
+# These bounds are deliberately LOOSE. They exist to catch a unit change, a
+# renamed field or a decimal shift - not to filter data. A tight bound here
+# would silently discard real extremes, which is the failure PLANNING 5f
+# principle 2 is about.
+validate:
+  demand_mw_min: 0
+  demand_mw_max: 200000            # IN-NO peaks in the tens of GW (5c)
+  temperature_c_min: -40.0
+  temperature_c_max: 60.0
+  expected_freq_hours: 1           # both sources are hourly (11)
+  # Gaps are reported, not fatal, on cached history - PLANNING 5h says log the
+  # gap and exclude those rows. A gap in a window that should be contiguous IS
+  # fatal; callers pass contiguous=True for that case.
+  max_gap_fraction_warn: 0.05
 
 # --- Splits ---
 # All relative to available history. Never fixed dates, never random.
@@ -135,6 +226,13 @@ evaluate:
   report_settled_fraction: true     # monitoring counterpart of row counts
   temperature_bands_c: [20, 30, 40, 45]
   report_row_counts: true
+  # Band sufficiency (PLANNING 13). Not a flat floor: the top band is the
+  # sparsest and is exactly the band that must stay separate.
+  #   interior bands  >= min_band_rows
+  #   top band        kept separate regardless of count
+  #   any band < 200  reported as "insufficient rows to judge", not as a number
+  min_band_rows: 500
+  insufficient_band_rows: 200
   # Every veto is a tolerance, never a bare inequality. DERIVED at step 10a
   # from each metric's own fold-to-fold spread. See 5g / 13.
   veto_tolerance:

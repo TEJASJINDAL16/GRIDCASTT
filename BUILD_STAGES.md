@@ -46,8 +46,8 @@ All five build stages below deliver `PLANNING.md`'s **Phase 1**.
 
 | Stage | Name | State |
 |---|---|---|
-| 1 | Foundation and Measurement | NOT STARTED |
-| 2 | Features and the Baseline | BLOCKED — needs stage 1 |
+| 1 | Foundation and Measurement | COMPLETE (19bc464) |
+| 2 | Features and the Baseline | READY — awaiting PR review |
 | 3 | Model and Tuning | BLOCKED — needs stage 2 |
 | 4 | Monitoring, Registry, Daily Job | BLOCKED — needs stage 3 |
 | 5 | Dashboard, Deploy, Evidence | BLOCKED — needs stage 4 |
@@ -71,18 +71,41 @@ way nothing downstream can detect.
 ### Requires from the human
 
 - `EM_API_KEY` present in `.env` (gitignored, chmod 600)
-- Network access to `api.electricitymap.org` and `open-meteo.com`
+- Network access to `api.electricitymap.org` and `open-meteo.com` **from the
+  machine the pulls run on**. Probe before assuming — see `PLANNING.md` 11 and 12
 - Docker installed and running
+- **Python 3.12** available. `make setup` builds the venv from 3.12 explicitly,
+  never from bare `python3`, and the Dockerfile pins the same version
 - The GitHub repo created, **public**, with push access working
+- **GitHub Actions enabled** on the repo
+- **Workflow permissions set to "Read and write"** (Settings -> Actions ->
+  General). Moved here from stage 5, where it was originally listed, because
+  the archive workflow below runs from stage 1 and commits its status record to
+  `state/`. `PLANNING.md` 5h makes writing that record a RULE, and a record
+  destroyed with the runner has not been written. The same setting later lets
+  the daily job commit `state/` back, which is both the git audit trail of
+  section 14 and the repository activity that keeps a scheduled workflow from
+  being disabled after 60 days. This is not scope creep: without it the stage-1
+  archive workflow cannot satisfy a rule it is subject to
+- **GitHub Secrets set now, not at stage 5** — `EM_API_KEY`,
+  `GDRIVE_CREDENTIALS_DATA`, `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`. The
+  archive workflow below runs from stage 1 and needs all four. See that
+  deliverable for why it cannot wait
 - **DVC remote: Google Drive, OAuth route.** The folder is already created and
   its ID is **`1Mrc2dxh8Ds5Q-GsyaSb-7ctaP6maH6be`**. Configure with
   `dvc remote add -d gdrive gdrive://1Mrc2dxh8Ds5Q-GsyaSb-7ctaP6maH6be`;
-  the first `dvc push` opens a browser once and caches a token in
-  `.dvc/tmp/gdrive-user-credentials.json` (gitignored). Do **not** use a service
+  the first `dvc push` that actually has bytes to upload opens a browser once
+  and caches a token. **That token is not at `.dvc/tmp/gdrive-user-credentials.json`** —
+  that path applied to earlier DVC versions and does not exist here. This
+  version caches it under the pydrive2fs application cache directory, keyed by
+  OAuth client id: on macOS,
+  `~/Library/Caches/pydrive2fs/<client-id>/default.json`. Note also that
+  `dvc push` with nothing tracked is a no-op that never authenticates, so the
+  token appears only after the first real push. Do **not** use a service
   account — service accounts have no Drive storage quota of their own and the
-  upload fails. If `dvc push` returns a rate-limit error, that is DVC's shared
-  OAuth app being throttled globally, not a problem with this repo; the fix is a
-  personal OAuth client ID, and you should ask before setting one up.
+  upload fails. A **personal OAuth client** is configured in `.dvc/config.local`,
+  which avoids the global throttling of DVC's shared OAuth app. That file is
+  gitignored, so CI needs the client id and secret as GitHub Secrets
 
 ### Build
 
@@ -93,31 +116,140 @@ way nothing downstream can detect.
 | `tests/` | one test per invariant that is testable without a model | 9, 14 |
 | `src/validate.py` | schema, range, gap, timezone checks on every ingest | 14 |
 | `scripts/archive_daily.py` | weather vintages + demand revisions | 5d, step 0c |
+| `scripts/backfill_weather.py` | cache Open-Meteo **archive** history for every zone point | 5a |
 | `scripts/measure_step0.py` | produces the measurements report | 13 |
+| `.github/workflows/archive.yml` | archive-only scheduler, from stage 1 | 5d, 14 |
 | `.dvc/`, DVC remote | artifact versioning | 14, step 0b |
 
-Then run the two data pulls (`make weather`, `make backfill`) and the
-measurement script.
+`backfill_weather.py` is a **sibling** of `backfill.py`, not an extension of it.
+INV-1 is enforced structurally by keeping the archive and forecast paths apart,
+and that separation is kept visible at the script level too.
+
+*Why `backfill_weather.py` exists at all:* `PLANNING.md` 5a requires all three
+sources cached to disk and treated as the source of truth, but `make weather`
+only probes Open-Meteo and writes nothing, and `make backfill` covers demand
+alone. Nothing built the weather cache. Every step-0 measurement needs demand
+joined to temperature, so the stage cannot complete without it.
+
+Then run the data pulls (`make weather`, `make backfill`, `make backfill-weather`)
+and the measurement script.
 
 ### Deliverables
 
-- [ ] `make setup` works from a clean clone
-- [ ] Docker image builds; CI runs green on push
-- [ ] `dvc init` done, remote configured, `dvc push` succeeds
-- [ ] `data/raw/` populated for all five zones over the full available history
-- [ ] `src/validate.py` passes on the pulled data, and **fails** on a
+- [x] `make setup` works from a clean clone, building the venv from Python 3.12
+- [x] Docker image builds; CI runs green on the stage-1 PR
+- [x] `dvc init` done, remote configured, `dvc push` succeeds
+- [x] Electricity Maps history depth **probed**, `demand.backfill_start` set to
+      the true earliest available data rather than a guessed date. If the origin
+      moves, say so in the report — `trend` is defined from that date
+- [x] EM rate-limit headers read on the first response and reported: what the
+      academic licence actually allows
+- [x] `data/raw/` populated for all five zones over the full available history
+- [x] `data/raw/` weather archive cached for every zone point over the same span
+- [x] `src/validate.py` passes on the pulled data, and **fails** on a
       deliberately corrupted copy (prove the check works)
-- [ ] `scripts/archive_daily.py` runs and writes a first weather vintage and a
+- [x] `scripts/archive_daily.py` runs and writes a first weather vintage and a
       first demand-revision snapshot
-- [ ] `reports/step0_measurements.md` exists, with plots, covering:
+- [x] **`.github/workflows/archive.yml` live and green** — archive and
+      `dvc push`, nothing else
+- [x] `reports/step0_measurements.md` exists, with plots, covering:
       demand vs temperature (the elbow), the cold-side inflection, band
       occupancy, candidate suppressed-demand hours, year-on-year growth,
       holiday vs matched non-holiday demand
-- [ ] `config/config.yaml` updated with the **measured** values for
-      `features.cooling_threshold_c`, `features.heating_threshold_c`,
-      `evaluate.temperature_bands_c`, `quality.suppression_*`
-- [ ] `PLANNING.md` section 13 rows for those keys marked replaced, each with
-      the measured value, the date and the method — in the commit message
+- [x] The elbow fitted by the method below, **both ways**, both numbers reported
+- [x] Per-zone elbows reported as evidence. If they spread by more than about
+      2 C, say so plainly — that is phase 2 evidence for a per-zone map, not a
+      phase 1 change
+- [x] `config/config.yaml` updated with the **measured** values for the
+      temperature breakpoint and `evaluate.temperature_bands_c`, plus
+      `evaluate.min_band_rows: 500`. **`quality.suppression_*` moved to
+      stage 2** — see below
+- [x] `PLANNING.md` section 13 table cells updated to the measured value followed
+      by `(measured YYYY-MM-DD)`; value, date and method in the commit message
+- [x] `README.md` rewritten to match the shipped design — see below
+
+### How the elbow is measured
+
+**RULE** A raw scatter of demand against temperature conflates the temperature
+response with the daily cycle. Demand is high at 20:00 and low at 04:00 for
+reasons unrelated to temperature, and temperature is itself strongly correlated
+with hour, so a naive fit recovers an elbow that is partly an artefact of when
+hot hours happen.
+
+```
+two-segment fit on log(demand), breakpoint by RSS-minimising grid search,
+pooled across zones, WITH hour-of-day and day-of-week fixed effects
+   — equivalently: remove the hour x weekday means first, fit on the residual
+
+run it BOTH ways once — naive and adjusted — and report both numbers.
+if they differ materially, that difference is itself the finding.
+```
+
+Pooled scalar is confirmed for phase 1; the config schema does not change. Same
+method for `heating_threshold_c`.
+
+### Why the archive workflow cannot wait for stage 5
+
+`PLANNING.md` 5d: weather forecast vintages and demand revisions are
+**unrecoverable if delayed**. Three section 13 placeholders — `purge_gap_days`
+(~4 weeks), `forecast_noise.*` (~6 weeks), `max_forecast_vintage_age_hours`
+(~8 weeks) — become measurable only by accumulating daily runs, and stages 2
+through 4 take longer than that. A laptop scheduler silently misses every day the
+machine is asleep, and a missed day is a vintage that cannot be reconstructed.
+
+The workflow does the archive and `dvc push` and **nothing else**. It is not
+`daily.yml`, which still arrives at stage 5 with scoring, triggers, retraining
+and publication. This is the one sanctioned piece of working ahead in stage 1.
+
+### Why `quality.suppression_*` moved to stage 2
+
+This is a **scoping correction, not a deferral of difficulty.** INV-8 still
+binds before any model trains, so stage 2 is the correct home — not stage 3.
+
+The stage-1 detector was a raw hour-over-hour delta rule: flag an hour where
+temperature rose by `suppression_temp_rise_c` while demand did not rise. On the
+real data it fires on **3-11% of all hours**, which is not load shedding — it
+is ordinary morning warming, when temperature climbs and demand has not yet
+picked up. Writing those numbers to config as a measurement would have poisoned
+INV-8 at its source: the invariant would be excluding a tenth of the training
+data for no reason, and the exclusion would look principled.
+
+The detector that is actually needed depends on a **fitted temperature
+response**, which does not exist until the feature pipeline does:
+
+```
+fit the temperature response, then flag SUSTAINED runs of large negative
+residuals at HIGH absolute temperature — demand far below what this
+temperature normally produces, for several consecutive hours, when it is hot
+```
+
+**Three sanity checks it must pass before any parameter is written anywhere.**
+There is no ground truth for load shedding to validate against, so the pattern
+is the evidence:
+
+| Check | Why |
+|---|---|
+| rate well under 1% of hours | 3-11% is a detector finding normal behaviour |
+| concentrated in **episodes**, not scattered | shedding is an event, not a texture |
+| **seasonal** — summer peaks — and **declining** across 2017-2026 | Indian supply improved over the period; a detector blind to that is finding noise |
+
+A detector that fires uniformly across seasons and years is finding noise,
+whatever its rate. The report carries the **pattern**, not just the number.
+
+### The README rewrite
+
+The committed `README.md` contradicts `PLANNING.md` in three places, on a public
+repo: it describes the phase 2 base-plus-regional-correction architecture as
+though it were shipping, it says the model retrains **nightly** where section 6
+forbids any calendar schedule, and it defines the baseline as "last week" where
+5c requires the most recent **measured** matching hour. A public repo describing
+an architecture we rejected is worse than no README.
+
+Replace it now with something short and accurate: what the project forecasts, the
+actual Ridge + LightGBM hybrid, trigger-based retraining stated explicitly as not
+nightly, the 5c baseline definition, and a line saying the project is under
+construction pointing at this document. The full README with the rejected-tools
+list still lands at stage 5.
 
 ### Exit gate
 
@@ -130,6 +262,15 @@ shows the elbow and states where it is.
 No feature engineering, no baseline, no model, no metrics module. If the elbow
 turns out to sit somewhere surprising, report it — do not adjust anything else
 to accommodate it.
+
+**RULE** Nothing may ever import from `scripts/measure_step0.py`. It does holiday
+lookup and suppression detection ad hoc, using the `holidays` package directly,
+because `src/ingest/calendar_in.py` and `src/features/quality.py` are stage 2
+deliverables. It is throwaway analysis. If a function in it proves worth keeping,
+it is **rewritten** into the proper module in stage 2, never imported across.
+
+*Rationale:* an import edge from a module to a throwaway script is how the
+throwaway script becomes load-bearing without anyone deciding that it should.
 
 ---
 
@@ -149,10 +290,11 @@ Nothing new. Stage 1 complete.
 | Path | Purpose | PLANNING ref |
 |---|---|---|
 | `src/ingest/calendar_in.py` | holidays, festivals, IST conversion | 5e |
-| `src/features/quality.py` | suppressed-demand detection (INV-8) | 5f P2 |
+| `src/features/quality.py` | suppressed-demand detection (INV-8), and the measurement of `quality.suppression_*` moved here from stage 1 | 5f P2, 13 |
 | `src/features/weather_feats.py` | cooling/heating degrees, per city then aggregate | 5e |
 | `src/features/forecast_noise.py` | training-time weather noise, applied to raw temperature **before** the degree transforms | 5d |
 | `src/features/build.py` | THE feature builder. Training and serving both call this | INV-9 |
+| — | **day-of-year, cyclically encoded**, joins the ablation candidate list — nothing in the core set represents position in the year, and 13 measures two thirds of IN-NE's apparent cold response as seasonal rather than thermal | 5e |
 | `src/backtest/splits.py` | tuning window, folds, purge gap, holdout | 5c |
 | `src/models/baselines.py` | seasonal naive, hour x weekday, ridge-all, per-zone | 5c |
 | `src/backtest/metrics.py` | MAPE, MASE, RMSSE, stratified reporting, signed bias | 5g |
@@ -168,6 +310,10 @@ baselines before metrics (MASE and RMSSE denominators are the baseline).
 - [ ] Contract test green: training and serving paths emit identical column
       names, order and dtypes
 - [ ] Every invariant INV-1..INV-9 has a test, and all are green
+- [ ] `quality.suppression_*` measured and written to config, with the detector
+      passing all three sanity checks — rate under 1%, concentrated in
+      episodes, seasonal and declining across 2017-2026. The **pattern** is
+      reported, not just the rate
 - [ ] `reports/baseline.md`: all four baselines scored across the twelve
       walk-forward folds
 - [ ] Every figure in it stratified by temperature band, hour, zone, day type
@@ -207,6 +353,11 @@ Nothing new.
 
 MLflow logging arrives here: file-backed, no server.
 
+**RULE** The tuning run has a wall-clock budget of **2 hours**. Time one trial
+first, project the total, and if the projection exceeds the budget reduce
+`tuning.n_trials` and report what it was reduced to and why. Do not run it
+overnight and do not silently exceed the budget.
+
 ### Deliverables
 
 - [ ] Hybrid implemented as specified: Ridge on the three linear-stage features,
@@ -220,12 +371,34 @@ MLflow logging arrives here: file-backed, no server.
       written to `drift.thresholds_backtest_sha`
 - [ ] MLflow runs logged with all five pins
 - [ ] `reports/model.md`: MASE and RMSSE per fold, with the baseline alongside
+- [ ] **Estimation-tier ablation** — train on the option-B span (measured plus
+      `MODE_BREAKDOWN`) and on the measured-only span, score both on the **same
+      measured folds**, and report the difference. The measured-only span
+      cannot support the full twelve-fold protocol, so run a reduced comparison
+      — fewer folds, shorter initial train — and say so explicitly in the
+      report
+- [ ] **Does including IN-EA pre-switch data help?** Its exclusion in
+      `quality.trainable_from` was a judgement call recorded as reversible — it
+      exceeded the relationship-test placebo band at two of four window lengths,
+      not all four. Run it both ways and put a number on it
+
+**This is a GATE, not merely a deliverable.** The final model does not ship
+until that number exists. The stage-1 relationship test *predicts* that the
+older era is noisier rather than different; this one *measures* whether that
+prediction held.
+
+*Why this deliverable exists:* it converts "training on `MODE_BREAKDOWN` data
+did not hurt" from an assumption into a measurement. `PLANNING.md` 13 records
+that decision as a judgement with evidence; this is the number that settles it.
+It is also the first question a sceptical reader asks, and having the answer
+ready is worth one extra backtest run.
 
 ### Exit gate
 
 MASE below 1 across folds. No regression against the baseline on any veto
 metric. Ablation run and reported. The backtest of record exists and its sha is
-in config.
+in config. **The estimation-tier ablation number exists** — the model does not
+ship without it.
 
 ### Do not do in this stage
 
@@ -292,10 +465,25 @@ No deployment. No dashboard beyond what the replay needs.
 
 ### Requires from the human
 
-- GitHub Secrets set: `EM_API_KEY`, and `GDRIVE_CREDENTIALS_DATA` — the contents
-  of `.dvc/tmp/gdrive-user-credentials.json`, which DVC reads from that
-  environment variable in CI
-- GitHub Pages enabled on the repo
+- GitHub Secrets set — all four are already required from stage 1 for the
+  archive workflow, and are listed again here because stage 5 is where the full
+  daily job depends on them:
+
+  | Secret | Contents | If missing |
+  |---|---|---|
+  | `EM_API_KEY` | the Electricity Maps key | no scoring, no revision archive |
+  | `GDRIVE_CREDENTIALS_DATA` | contents of `~/Library/Caches/pydrive2fs/<client-id>/default.json` — **not** the `.dvc/tmp/` path documented for older DVC, which does not exist here | `dvc push` fails; every archive a runner produces dies with the runner |
+  | `GDRIVE_CLIENT_ID` | the personal OAuth client id from `.dvc/config.local` | CI **silently** falls back to DVC's shared OAuth app, which is throttled globally |
+  | `GDRIVE_CLIENT_SECRET` | the matching secret | as above |
+
+  The client id and secret are needed because `.dvc/config.local` is gitignored
+  under INV-6, so the runner has no copy of the personal client and no error
+  announces the fallback.
+
+- **Workflow permissions set to "Read and write"** — already required from
+  stage 1 for the archive workflow's status record; restated here because this
+  is where the daily job depends on it to commit `state/` back
+- **GitHub Pages enabled**, source = branch `main`, folder `/docs`
 - Confirmation that the repo is public
 
 ### Build
@@ -316,7 +504,10 @@ No deployment. No dashboard beyond what the replay needs.
 - [ ] No error figure anywhere on the page without its baseline beside it
 - [ ] Trigger thresholds drawn on the rolling charts
 - [ ] Lead-time chart published
-- [ ] Pages serving the dashboard
+- [ ] Pages serving the dashboard from `main` `/docs`
+- [ ] **Electricity Maps attribution in the dashboard footer** — the academic
+      licence requires attribution in published work (`PLANNING.md` 11)
+- [ ] Docker image built **and pushed** to GHCR, per section 14
 - [ ] `daily.yml` and `retry.yml` live; three consecutive successful daily runs
 - [ ] `state/` commits appearing from the daily job; `dvc push` running in it
 - [ ] **Holdout evaluated once**, and reported alongside the baseline
@@ -336,5 +527,66 @@ reported. Model card lists remaining placeholders honestly.
 *Append one entry per completed stage. Do not edit earlier entries.*
 
 ```
-(empty)
+STAGE 1 — Foundation and Measurement
+Completed 2026-09-08. Branch stage-1, PR into main.
+
+ENVIRONMENT
+  make setup            venv built from Python 3.12 explicitly, exact pins
+                        throughout; verified from a clean clone. libomp
+                        guard added after LightGBM failed at dlopen.
+  Dockerfile            base pinned by digest, not tag. Verified by CI, not
+                        locally — Docker Desktop was down, and the ruling
+                        was to tick this against the CI run.
+  ci.yml                green. Lint, invariant tests, image build, and the
+                        tests run again INSIDE the image.
+  DVC                   init, gdrive remote, 12 files pushed. The gdrive
+                        dependency chain had to be pinned to resolve at all.
+
+DATA
+  demand                5 zones, ~84,900 rows each, 2017-01-01 to 2026-09-08,
+                        ZERO gaps, validated, DVC-tracked.
+  weather               5 points, 84,744 rows each, same span, zero gaps and
+                        zero null temperatures.
+  archive               running. Vintages and revisions written; archive.yml
+                        scheduled at 04:30 UTC = 10:00 IST, the issue time.
+
+VALIDATION
+  Passes on all five real files. Fails on seven deliberate corruptions of a
+  real file: Fahrenheit, renamed column, naive timestamps, IST timestamps,
+  duplicate hour, five-hour hole, all-null column.
+
+MEASUREMENTS  (reports/step0_measurements.md)
+  temp_breakpoint_c     21.5, renamed from cooling_threshold_c
+  heating_threshold_c   DELETED
+  temperature_bands_c   [20,30,40,45] CONFIRMED by occupancy, not changed
+  min_band_rows         500, insufficient_band_rows 200
+  suppression_*         MOVED TO STAGE 2 — the delta detector fired on
+                        3-11% of hours, which is morning warming, not
+                        load shedding
+  EM history            2017-01, not "at least 4 years"
+  EM rate limit         2400 req / 60 s
+  EM range limit        10 days per hourly call
+
+FOUR THINGS THE SPECIFICATION GOT WRONG, ALL MEASURED
+  INV-3's premise       three estimation methods, not one. Rewritten to key
+                        on method via quality.trainable_estimation_methods.
+  The U-shape           not identified on any grid. Demand rises with
+                        temperature throughout. heating_degrees deleted,
+                        5c/5e/5f swept.
+  The monotone target   constraints are global, so constraining raw
+                        temperature would forbid IN-NE's measured cold rise.
+                        Constraint moved to cooling_degrees only.
+  The top-band veto     25 rows above 45 C, all IN-NO. Veto now reads the
+                        highest band with >= 200 rows.
+
+GATES PASSED
+  Discontinuity test    level clean in 4/5 zones against placebo bands.
+  Relationship test     slope stable in 4/5. IN-NE and IN-EA get later
+                        trainable starts; the other three keep the B span.
+
+CARRIED FORWARD
+  Stage 2  suppression detector + its three sanity checks; day-of-year
+           cyclic joins the ablation candidates.
+  Stage 3  estimation-tier ablation, now a GATE; plus "does including
+           IN-EA pre-switch data help?"
 ```

@@ -1,0 +1,2 @@
+{"run_at": "2026-09-08T08:17:54.378932+00:00", "job": "archive_daily", "parts": {"forecast_vintage": 1920}, "failed_zones": {"forecast_vintage": []}, "outcome": "success"}
+{"run_at": "2026-09-08T08:18:34.936075+00:00", "job": "archive_daily", "parts": {"forecast_vintage": 1920}, "failed_zones": {"forecast_vintage": []}, "outcome": "success"}

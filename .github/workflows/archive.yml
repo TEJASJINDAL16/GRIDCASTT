@@ -1,0 +1,97 @@
+# Archive only (PLANNING 5d, step 0c).
+#
+# This is NOT daily.yml. It does two things — archive, then dvc push — and
+# nothing else. No scoring, no triggers, no retraining, no publication; those
+# arrive with daily.yml at stage 5.
+#
+# It runs from stage 1 because weather forecast vintages and demand revisions
+# are unrecoverable if delayed, and three section 13 placeholders become
+# measurable only by accumulating daily runs over four to eight weeks — longer
+# than stages 2 through 4 will take. A laptop scheduler silently misses every
+# day the machine is asleep, and a missed day cannot be reconstructed.
+name: archive
+
+on:
+  schedule:
+    # Cron is UTC (PLANNING 14). 04:30 UTC = 10:00 IST, the issue time, so the
+    # vintage archived is the one a forecast issued today would have used.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+# The status record is an append-only entry in state/ and has to survive the
+# runner (5h: every run writes a status record; a record destroyed with the
+# runner is not written). That needs write access.
+permissions:
+  contents: write
+
+concurrency:
+  # Schedulers occasionally fire twice. Serialise rather than race two runs
+  # writing the same day's archive.
+  group: archive
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Configure the DVC remote
+        # The personal OAuth client lives in .dvc/config.local, which is
+        # gitignored under INV-6, so the runner has no copy of it. Without
+        # these, DVC falls back to its shared OAuth app — which is throttled
+        # globally — and nothing announces the fallback.
+        #
+        # --local writes .dvc/config.local, which is gitignored, so nothing
+        # here can be committed by the step below.
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+        run: |
+          dvc remote modify --local gdrive gdrive_client_id "$GDRIVE_CLIENT_ID"
+          dvc remote modify --local gdrive gdrive_client_secret "$GDRIVE_CLIENT_SECRET"
+
+      - name: Pull existing archives
+        # Needed so the revision diff compares against everything already
+        # known, not just what this runner happens to have.
+        env:
+          GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+        run: dvc pull --allow-missing || echo "nothing to pull yet"
+
+      - name: Archive vintages, observed weather and demand revisions
+        # INV-6: the key is read by src/config.py and passed to a request
+        # header. It is never echoed, and no step here prints the environment.
+        env:
+          EM_API_KEY: ${{ secrets.EM_API_KEY }}
+        run: python scripts/archive_daily.py
+
+      - name: Push archives to the DVC remote
+        # A vintage that exists only on a destroyed runner is not an archive.
+        env:
+          GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+        run: |
+          dvc add data/raw/forecast_vintages data/raw/demand_revisions
+          dvc push
+
+      - name: Commit the status record and the DVC pointers
+        run: |
+          git config user.name  "gridcast-archive[bot]"
+          git config user.email "noreply@github.com"
+          git add state/ data/raw/*.dvc data/.gitignore 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "nothing to commit"
+          else
+            git commit -m "archive: $(date -u +%Y-%m-%d) vintage and revisions"
+            git push
+          fi
