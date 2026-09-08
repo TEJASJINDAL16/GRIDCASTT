@@ -14,7 +14,11 @@ demand:
   primary_zone: IN-NO          # Northern India — includes Delhi
   all_zones: [IN-NO, IN-WE, IN-SO, IN-EA, IN-NE]
   granularity: hourly
-  backfill_start: "2021-01-01"
+  # MEASURED 2026-09-08: all five zones serve data from 2017-01. The previous
+  # 2021-01-01 was a guess, and it left only ~8 months of slack against the
+  # 60-month split budget of 5c. This is also the ORIGIN OF `trend` (5e) -
+  # days since this date - so moving it redefines that feature.
+  backfill_start: "2017-01-01"
   # The past-range endpoint refuses more than 10 days of hourly data per call:
   #   {"error":"Date range exceeded 10 days limit for hourly data"}
   # fetch_range treats a 4xx as unrecoverable and returns no rows, so a chunk

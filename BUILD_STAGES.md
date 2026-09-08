@@ -78,6 +78,15 @@ way nothing downstream can detect.
   never from bare `python3`, and the Dockerfile pins the same version
 - The GitHub repo created, **public**, with push access working
 - **GitHub Actions enabled** on the repo
+- **Workflow permissions set to "Read and write"** (Settings -> Actions ->
+  General). Moved here from stage 5, where it was originally listed, because
+  the archive workflow below runs from stage 1 and commits its status record to
+  `state/`. `PLANNING.md` 5h makes writing that record a RULE, and a record
+  destroyed with the runner has not been written. The same setting later lets
+  the daily job commit `state/` back, which is both the git audit trail of
+  section 14 and the repository activity that keeps a scheduled workflow from
+  being disabled after 60 days. This is not scope creep: without it the stage-1
+  archive workflow cannot satisfy a rule it is subject to
 - **GitHub Secrets set now, not at stage 5** — `EM_API_KEY`,
   `GDRIVE_CREDENTIALS_DATA`, `GDRIVE_CLIENT_ID`, `GDRIVE_CLIENT_SECRET`. The
   archive workflow below runs from stage 1 and needs all four. See that
@@ -85,8 +94,14 @@ way nothing downstream can detect.
 - **DVC remote: Google Drive, OAuth route.** The folder is already created and
   its ID is **`1Mrc2dxh8Ds5Q-GsyaSb-7ctaP6maH6be`**. Configure with
   `dvc remote add -d gdrive gdrive://1Mrc2dxh8Ds5Q-GsyaSb-7ctaP6maH6be`;
-  the first `dvc push` opens a browser once and caches a token in
-  `.dvc/tmp/gdrive-user-credentials.json` (gitignored). Do **not** use a service
+  the first `dvc push` that actually has bytes to upload opens a browser once
+  and caches a token. **That token is not at `.dvc/tmp/gdrive-user-credentials.json`** —
+  that path applied to earlier DVC versions and does not exist here. This
+  version caches it under the pydrive2fs application cache directory, keyed by
+  OAuth client id: on macOS,
+  `~/Library/Caches/pydrive2fs/<client-id>/default.json`. Note also that
+  `dvc push` with nothing tracked is a no-op that never authenticates, so the
+  token appears only after the first real push. Do **not** use a service
   account — service accounts have no Drive storage quota of their own and the
   upload fails. A **personal OAuth client** is configured in `.dvc/config.local`,
   which avoids the global throttling of DVC's shared OAuth app. That file is
@@ -395,7 +410,7 @@ No deployment. No dashboard beyond what the replay needs.
   | Secret | Contents | If missing |
   |---|---|---|
   | `EM_API_KEY` | the Electricity Maps key | no scoring, no revision archive |
-  | `GDRIVE_CREDENTIALS_DATA` | contents of `.dvc/tmp/gdrive-user-credentials.json` | `dvc push` fails; every archive a runner produces dies with the runner |
+  | `GDRIVE_CREDENTIALS_DATA` | contents of `~/Library/Caches/pydrive2fs/<client-id>/default.json` — **not** the `.dvc/tmp/` path documented for older DVC, which does not exist here | `dvc push` fails; every archive a runner produces dies with the runner |
   | `GDRIVE_CLIENT_ID` | the personal OAuth client id from `.dvc/config.local` | CI **silently** falls back to DVC's shared OAuth app, which is throttled globally |
   | `GDRIVE_CLIENT_SECRET` | the matching secret | as above |
 
@@ -403,10 +418,9 @@ No deployment. No dashboard beyond what the replay needs.
   under INV-6, so the runner has no copy of the personal client and no error
   announces the fallback.
 
-- **Workflow permissions set to "Read and write"** (Settings -> Actions ->
-  General). Without it the daily job cannot commit `state/` back, which breaks
-  both the git audit trail of section 14 and the 60-day inactivity protection
-  that keeps the schedule alive
+- **Workflow permissions set to "Read and write"** — already required from
+  stage 1 for the archive workflow's status record; restated here because this
+  is where the daily job depends on it to commit `state/` back
 - **GitHub Pages enabled**, source = branch `main`, folder `/docs`
 - Confirmation that the repo is public
 

@@ -585,6 +585,21 @@ One row per (issued_at, location, target_datetime), with the weather variables
 and derived `lead_time_hours`.
 Written to `data/raw/forecast_vintages/`.
 
+**RULE** Rows in the vintage archive with `lead_time_hours <= 0` are **analysis
+material, not forecasts**. They are archived for completeness and must never be
+used as features, nor scored as forecasts. Every consumer of the archive filters
+on lead time before use.
+
+*Rationale:* the forecast endpoint returns the current day from 00:00, so the
+earliest rows of every vintage describe hours that had **already elapsed** when
+the forecast was issued — about 2% of a 16-day horizon. They are the provider's
+account of what just happened, not a prediction of it. Using one as a feature is
+leakage under INV-1 wearing the right column name: the column says
+`temperature_2m` and the row says the hour is in the archive, and nothing about
+the shape of the data reveals that the value was not knowable at issue time.
+`lead_time_hours` exists so the filter is trivial and so including a row is
+always an explicit decision rather than an accidental one.
+
 *Rationale:* Open-Meteo serves observed history and the current forecast, but
 not what the forecast said on a past date. So training uses observed weather
 while production is served a forecast — the model trains on perfect
@@ -1787,6 +1802,13 @@ from, with nothing erroring. Enforced by a contract test in CI (see 14).
 intent, not by oversight.
 
 - Timeline and dates (the milestone *content* is fixed in 12 and 14)
+- **Which estimated rows, if any, are trainable.** INV-3 forbids training on
+  `is_estimated == True` on the stated ground that such rows carry a
+  `TIME_SLICER_AVERAGE` fill-in. Section 11 records that this is true of one of
+  three observed methods. Applying INV-3 literally leaves 22 months of trainable
+  history against a 60-month split budget (5c), so the walk-forward as specified
+  cannot run. **Not decided.** Until it is, no model trains and no step-0
+  threshold is written to config.
 
 ---
 
@@ -1810,15 +1832,45 @@ snake_case form. There is exactly one conversion point.
 | **Demand field** | **`powerConsumptionTotal`**, megawatts |
 | Timestamps | **UTC**. India is UTC+5:30 — a half-hour offset |
 | Granularity | hourly confirmed (168 rows for a 7-day window) |
-| History depth | at least 4 years; probe did not reach the limit |
+| **History depth** | **all five zones from 2017-01 (measured 2026-09-08, binary search against the floor 2015-01-01)** |
+| **Range limit** | **10 days per `past-range` call at hourly granularity (measured 2026-09-08). A longer window returns 4xx with `Date range exceeded 10 days limit for hourly data`, which `fetch_range` treats as unrecoverable — so an oversized chunk yields an empty pull that looks like a completed one** |
+| **Rate limit** | **2400 requests per 60 seconds (measured 2026-09-08, from `x-ratelimit-limit` / `ratelimit-policy`). A full five-zone backfill is roughly 340 requests, so the request budget is not a constraint** |
 | Zones | `IN-NO`, `IN-WE`, `IN-SO`, `IN-EA`, `IN-NE`, plus `IN` |
-| Estimation flags | `isEstimated` (bool), `estimationMethod` (string) |
+| Estimation flags | `isEstimated` (bool), `estimationMethod` (string). **Three methods observed, and they are not equivalent — see below** |
 | Revision behaviour | rows published as estimates are overwritten with measured values days later; visible as `updatedAt` > `createdAt` |
 | Licence | academic, non-commercial. **Attribution to Electricity Maps required in published work.** Expires 2027-03-04 |
 
 *Because the licence expires, historical data is cached to disk early. Every
 downstream step reads the cache, so training, backtests and charts survive the
 key lapsing. Only the live daily update depends on the API.*
+
+#### Estimation methods — three, not one (measured 2026-09-08)
+
+Recorded here as observation. **What follows for INV-3 is not yet decided** —
+see 10.
+
+| `estimationMethod` | Period, all five zones | What it appears to be |
+|---|---|---|
+| `GENERAL_PURPOSE_ZONE_MODEL` | 2017-01 to ~2020 | a modelled series |
+| `MODE_BREAKDOWN` | ~2021 to 2024-11 | the fuel-mix breakdown is estimated |
+| `TIME_SLICER_AVERAGE` | the 2024-11 boundary, and current unsettled rows | the fill-in INV-3 describes |
+| *(none)* — `isEstimated == False` | from 2024-11-05 (IN-EA from ~2024-06) | measured |
+
+A `TIME_SLICER_AVERAGE` fill-in repeats: the same (hour, weekday) takes an
+identical value. Tested on 18-day samples of IN-NO, none of the tiers do.
+
+| Tier | n | distinct | exact repeats | zero hour-to-hour delta | mean abs delta |
+|---|---|---|---|---|---|
+| 2017-06 `GENERAL_PURPOSE_ZONE_MODEL` | 432 | 420 | 2.8% | 0 | 638 MW |
+| 2022-06 `MODE_BREAKDOWN` | 432 | 429 | 0.7% | 1 | 3,798 MW |
+| 2025-06 measured | 432 | 427 | 1.2% | 0 | 1,772 MW |
+
+`MODE_BREAKDOWN` is at least as variable as measured data, so its
+`powerConsumptionTotal` is not a time-slice average.
+`GENERAL_PURPOSE_ZONE_MODEL` is real-looking but **measurably smoother than
+reality** — the standard deviation across days at 18:00 IST is 1,610 MW in
+2017 against 6,780 MW in 2025 — which is the signature of a model output, and
+training on it would teach the forecaster to under-predict variance.
 
 ### Open-Meteo
 
