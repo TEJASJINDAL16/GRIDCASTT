@@ -33,6 +33,20 @@ matplotlib==3.11.1
 # remote and fails with an unsupported-URL error.
 dvc==3.67.1
 dvc-gdrive==3.0.1
+# The gdrive stack does not resolve to a working set on its own. Left alone,
+# pip installs pyOpenSSL 22.0.0 against cryptography 50, and every `dvc push`
+# dies with "module 'lib' has no attribute 'GEN_EMAIL'" — GEN_EMAIL was
+# removed from cryptography's bindings and old pyOpenSSL still references it.
+# The constraint chain that does resolve:
+#   pydrive2  requires pyOpenSSL <= 24.2.1
+#   pyOpenSSL 24.2.1 requires cryptography < 44
+#   asyncssh 2.24 (via scmrepo, for SSH remotes we do not use) wants
+#     cryptography >= 48, so it is held at the last version that does not
+# `pip check` is clean at these versions; it is not at any nearby combination.
+pydrive2==1.21.3
+pyOpenSSL==24.2.1
+cryptography==43.0.3
+asyncssh==2.18.0
 mlflow==3.16.0
 optuna==5.0.0
 
