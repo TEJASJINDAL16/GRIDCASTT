@@ -28,11 +28,21 @@ def _get(url: str, params: dict) -> dict:
 
 
 def _to_frame(payload: dict, tz: str) -> pd.DataFrame:
-    hourly = payload["hourly"]
-    df = pd.DataFrame(hourly)
-    df["time"] = pd.to_datetime(df["time"])
-    df = df.rename(columns={"time": "datetime"}).set_index("datetime").sort_index()
-    df.attrs["timezone"] = tz
+    """Parse an Open-Meteo response into a UTC-indexed frame.
+
+    Open-Meteo returns naive local-time strings in whatever timezone was asked
+    for. Storing those unchanged is how a half-hour offset becomes invisible:
+    India is UTC+5:30, so a naive IST stamp read as UTC mislabels the weekday
+    on the first hour of every forecast day and shifts every holiday lookup
+    (5e). Everything is stored UTC and converted to IST downstream, once.
+    """
+    df = pd.DataFrame(payload["hourly"])
+    stamps = pd.to_datetime(df["time"])
+    if stamps.dt.tz is None:
+        stamps = stamps.dt.tz_localize(tz)
+    df["time"] = stamps.dt.tz_convert("UTC")
+    df = df.rename(columns={"time": "datetime_utc"}).set_index("datetime_utc").sort_index()
+    df.attrs["requested_timezone"] = tz
     df.attrs["elevation"] = payload.get("elevation")
     return df
 
@@ -44,7 +54,7 @@ def fetch_archive(
     end: str,
     variables: Iterable[str],
     url: str = "https://archive-api.open-meteo.com/v1/archive",
-    tz: str = "Asia/Kolkata",
+    tz: str = "UTC",
 ) -> pd.DataFrame:
     """Hourly OBSERVED weather between two dates (YYYY-MM-DD, inclusive)."""
     params = {
@@ -65,7 +75,7 @@ def fetch_forecast(
     variables: Iterable[str],
     days: int = 7,
     url: str = "https://api.open-meteo.com/v1/forecast",
-    tz: str = "Asia/Kolkata",
+    tz: str = "UTC",
 ) -> pd.DataFrame:
     """Hourly FORECAST weather for the next `days` days."""
     params = {

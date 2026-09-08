@@ -65,6 +65,25 @@ quality:
   suppression_temp_rise_c: 1.0
   suppression_demand_delta_pct: 0.0
 
+# --- Daily archive (see 5d) ---
+# Unrecoverable if delayed. Open-Meteo serves observed history and the CURRENT
+# forecast, but never what the forecast said on a past date, so every day
+# without archiving is a vintage that can never be reconstructed.
+archive:
+  # Store the WHOLE horizon the API returns, not only the 24 hours used. The
+  # extra hours cost nothing on the same response and give a wider range of
+  # lead times - and they are what makes a multi-day outage degrade gracefully
+  # (5h) rather than fall off a cliff.
+  forecast_days: 16                # Open-Meteo's maximum
+  vintage_dir: data/raw/forecast_vintages
+  revision_dir: data/raw/demand_revisions
+  # How far back to re-fetch demand each day looking for revisions. Must
+  # comfortably exceed the settlement lag we are trying to measure; the single
+  # observed case took two days and splits.purge_gap_days assumes 10.
+  revision_lookback_days: 21
+  # Extend the observed-weather history as the archive API releases it (5d).
+  observed_lag_days: 7
+
 # --- Ingest validation (see 14) ---
 # Plain assertions on every ingest: fail loudly and refuse to write. Both APIs
 # can change shape silently, and a renamed column produces a plausible wrong
