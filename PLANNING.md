@@ -705,6 +705,7 @@ The **Stage** column says which half of the hybrid consumes each feature —
 | `temperature` | **linear** + tree | Open-Meteo | the dominant driver; carries the slope below the breakpoint and can leave the training range in both directions |
 | `cooling_degrees` | **linear** + tree | `max(0, T - temp_breakpoint_c)` | see below — kept for two reasons, neither of which is helping the tree |
 | `trend` | **linear** + tree | days since `demand.backfill_start`, fixed origin | year-on-year growth; without it the tree pins to the final training period's level and runs low, by roughly the growth rate per year of staleness (5c) |
+| `zone` | tree | data column, native categorical | five pooled series; without it the model predicts an average of five and matches none |
 
 **RULE** Once training has begun, `demand.backfill_start` **never moves**.
 Changing it invalidates every derived threshold and the champion itself, and
@@ -719,7 +720,6 @@ errors. The drift thresholds have the same problem: they were derived from a
 backtest whose feature matrix used the old origin. This is a silent-failure
 mode of exactly the kind section 9 exists for, and the only safe response is to
 treat an origin change as a full rebuild.
-| `zone` | tree | data column, native categorical | five pooled series; without it the model predicts an average of five and matches none |
 
 **RULE** Features marked `linear + tree` are passed to **both** stages. The
 Ridge stage sees only those three; LightGBM sees everything.

@@ -44,12 +44,37 @@ weather:
     - wind_speed_10m
     - shortwave_radiation
     - dew_point_2m
+  # Load weights for aggregating per-city features to a zone (5e RULE).
+  # Empty means equal weights. Phase 1 configures one point per zone, so this
+  # is inert as configured - it exists because the aggregation rule must hold
+  # the moment a second city is added, and retrofitting it later would
+  # silently change every temperature feature.
+  load_weights: {}
   points:
     IN-NO: {name: Delhi,     lat: 28.6139, lon: 77.2090}
     IN-WE: {name: Mumbai,    lat: 19.0760, lon: 72.8777}
     IN-SO: {name: Bengaluru, lat: 12.9716, lon: 77.5946}
     IN-EA: {name: Kolkata,   lat: 22.5726, lon: 88.3639}
     IN-NE: {name: Guwahati,  lat: 26.1445, lon: 91.7362}
+
+# --- Calendar (see 5a, 5e) ---
+calendar:
+  # One `holidays` subdivision per zone, chosen to match the weather point's
+  # city, since that is the dominant load centre. A zone spans many states;
+  # this is the representative one, not a claim that the zone is that state.
+  subdivisions:
+    IN-NO: DL        # Delhi
+    IN-WE: MH        # Maharashtra (Mumbai)
+    IN-SO: KA        # Karnataka (Bengaluru)
+    IN-EA: WB        # West Bengal (Kolkata)
+    IN-NE: AS        # Assam (Guwahati)
+  # Hand-maintained extension for festivals the package misses (5a RULE).
+  # Dates are lunar and must be entered from an authoritative source - NEVER
+  # derived, guessed or interpolated. Missing rows are a known gap, recorded
+  # in the file header; an invented row is a silent error.
+  festivals_file: data/external/festivals_in.csv
+  # A holiday resembles a Sunday, so day_type separates the three.
+  weekend_days: [5, 6]             # Saturday, Sunday in IST
 
 # --- Feature engineering ---
 # Thresholds are starting values. Find the real elbow from the data and

@@ -1,0 +1,24 @@
+# Hand-maintained festival extension (PLANNING 5a).
+#
+# The `holidays` package covers the national list and the state subdivisions
+# configured in calendar.subdivisions, including most lunar-dated festivals
+# (Diwali, Holi, Dussehra, Id-ul-Fitr, Janmashtami, Ganesh Chaturthi in MH).
+# This file is for what it misses.
+#
+# RULE FOR ANYONE EDITING THIS FILE
+#   Dates are lunar and move every year. Enter them from an authoritative
+#   source only. Never derive one from another festival, never interpolate,
+#   never guess. A wrong date here is invisible: it mislabels is_holiday for
+#   that day and the model quietly learns the wrong effect.
+#
+# KNOWN GAP, NOT YET FILLED
+#   Durga Puja (IN-EA). Four to five days in Sep/Oct in which West Bengal
+#   substantially shuts down - plausibly the largest single demand event in
+#   that zone. The package carries Dussehra, which is Vijaya Dashami, the
+#   LAST day; the preceding Shashthi through Navami days are absent. The
+#   window could be derived from the Dussehra date, but deriving it is
+#   exactly what the rule above forbids, so it is left empty and reported.
+#   Others likely missing: Chhath (IN-NO/IN-EA), Onam and Pongal (IN-SO).
+#
+# Columns: date (YYYY-MM-DD, IST), zone (or ALL), name
+date,zone,name
