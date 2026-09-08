@@ -276,6 +276,10 @@ def test_inv9_there_is_at_most_one_feature_builder():
         )
 
 
-@pytest.mark.skip(reason="stage 2: the train/serve contract test, once build.py exists")
 def test_inv9_training_and_serving_emit_identical_columns():
-    ...
+    """The full contract lives in tests/test_feature_contract.py; this asserts
+    the single module exists and exposes the contract INV-9 is about."""
+    from src.features.build import FEATURE_COLUMNS, build_features, feature_matrix
+    assert callable(build_features) and callable(feature_matrix)
+    assert FEATURE_COLUMNS, "the feature contract must not be empty"
+    assert (SRC / "features" / "build.py").exists()
