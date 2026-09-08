@@ -316,7 +316,7 @@ Phase 1 is a **two-stage hybrid**. This is the architecture everywhere, in all
 conditions — not a special case bolted on for heatwaves.
 
 ```
-prediction = Ridge( cooling_degrees, heating_degrees, trend )
+prediction = Ridge( temperature, cooling_degrees, trend )
            + LightGBM( all features, fitted on the residual )
            then exp() back to megawatts
 ```
@@ -333,8 +333,8 @@ and any curvature the linear term missed.
 
 | Feature | Can leave training range? | Linear stage |
 |---|---|---|
+| `temperature` | yes — record heat, record cold | **yes** |
 | `cooling_degrees` | yes — record heat | **yes** |
-| `heating_degrees` | yes — record cold | **yes** |
 | `trend` | **yes — always, by definition** | **yes** |
 | `hour_of_day` | no, always 0-23 | no |
 | `day_of_week` | no, always 0-6 | no |
@@ -361,20 +361,36 @@ every hour, always in the same direction.
 
 A line keeps rising. That is the entire reason the linear stage exists.
 
-#### Why the linear stage cannot distort normal conditions
+#### What the linear stage does across the range
 
 ```
-cooling_degrees = max(0, T - 24)     zero for all T <= 24
-heating_degrees = max(0, 15 - T)     zero for all T >= 15
+temperature                                  everywhere
+cooling_degrees = max(0, T - 21.5)           zero for all T <= 21.5
 ```
 
-Between 15 C and 24 C **both are zero**, so the temperature part of Stage 1
-contributes nothing but its intercept. All variation in the comfortable band
-comes from LightGBM.
+Together these reproduce the identified two-slope shape exactly: a shallow
+slope below the breakpoint, carried by `temperature`, and a steeper one above
+it, carried by `temperature + cooling_degrees`.
 
-The linear component is dormant in the common case and only speaks when
-temperature genuinely matters. That is why the `max(0, ...)` form is used
-rather than raw temperature.
+*This section previously claimed the linear stage was dormant between 15 C and
+24 C, where `cooling_degrees` and `heating_degrees` were both zero and only the
+intercept remained. That rested on demand being U-shaped in temperature, which
+measurement has disproved — demand rises with temperature across the whole
+observed range (13). There is no dormant band, and a linear stage that was
+silent through the commonest 60% of hours would have been carrying no
+extrapolable signal there at all.*
+
+**RULE** The linear stage extrapolates **freely above** the training range and
+is **clamped at the training minimum below** it. Record the training minimum
+per fold. Governed by `features.clamp_linear_below`.
+
+*Rationale:* with a positive slope on raw temperature, an unprecedented cold
+snap extrapolates downward — the under-forecast direction that 5f Principle 4
+exists to avoid. The asymmetry is principled, not a hedge. Above the range
+there is a physical prior: hotter means more cooling load, and it is the
+direction both climate and AC penetration are moving. Below it there is no
+prior, no pooled heating load in the data, and the error leans the dangerous
+way. Cold beyond anything seen flattens rather than continuing down.
 
 #### Why the log scale makes one coefficient serve five zones
 
@@ -390,14 +406,26 @@ A percentage is scale-free where megawatts are not, so a single fitted
 coefficient is correct for every zone. The log transform chosen for the zone
 imbalance problem pays off a second time here.
 
-**RULE** Apply monotone increasing constraints on `cooling_degrees` and
-`heating_degrees` in the LightGBM stage.
+**RULE** Apply a monotone increasing constraint on **`cooling_degrees` only**
+in the LightGBM stage. Raw `temperature` is in the tree **unconstrained**.
 
 *More heat cannot mean less cooling load. With few examples above 45 C an
-unconstrained model fits noise and can produce a physically impossible dip.
-This is only possible because temperature is split into two one-sided terms —
-demand is U-shaped in raw temperature, so monotonicity cannot be declared on
-it.*
+unconstrained model fits noise and can produce a physically impossible dip.*
+
+*Why not constrain raw temperature instead, now that it carries the linear
+slope: LightGBM monotone constraints are **per-feature and global**, never
+zone-conditional. Constraining temperature would make IN-NE's measured
+cold-side rise — demand rising as it cools, -0.71 %/C within-month on 2,905
+rows (13) — structurally unrepresentable, forbidding the model from learning a
+real effect. The constraint exists to stop something absurd in the **hot tail**;
+applying it across the whole range to achieve that costs a real effect at the
+other end.*
+
+*`cooling_degrees` is zero below the breakpoint, so constraining it constrains
+the hot side and nothing else. The cold side stays free. This is also what
+gives `cooling_degrees` a job in the tree despite being a deterministic
+transform of a column already present: it is the feature that carries the
+constraint.*
 
 **RULE** Correct the retransformation bias when inverting the log, using
 **Duan's smearing estimator**: multiply `exp(prediction)` by
@@ -464,8 +492,8 @@ likely to matter more:
 | Parameter | What it controls |
 |---|---|
 | `recency_half_life_days` | how fast old data loses influence |
-| `cooling_threshold_c` | where the elbow actually sits — measure it, do not assume 24 |
-| number of piecewise cooling breakpoints | Phase 2 only. Phase 1 uses the single ramp max(0, T - cooling_threshold_c); a multi-breakpoint form would add cooling_degrees_1..n and is not specified here |
+| `temp_breakpoint_c` | where the slope actually steepens — measured at 21.5 (13), retunable |
+| number of piecewise cooling breakpoints | Phase 2 only. Phase 1 uses the single ramp max(0, T - temp_breakpoint_c); a multi-breakpoint form would add cooling_degrees_1..n and is not specified here |
 | Ridge `alpha` | regularisation of the linear stage |
 
 LightGBM side: `num_leaves`, `learning_rate`, `min_data_in_leaf`,
@@ -670,9 +698,8 @@ The **Stage** column says which half of the hybrid consumes each feature —
 | `hour_of_day` | tree | timestamp (IST) | without it there is no daily shape at all |
 | `day_of_week` | tree | timestamp (IST) | weekday vs Sunday is a large systematic gap; weather cannot infer it |
 | `is_holiday` | tree | `holidays` + manual list | shifts demand 10-20% and is invisible in every other feature |
-| `temperature` | tree | Open-Meteo | the dominant driver |
-| `cooling_degrees` | **linear** + tree | `max(0, T - cooling_threshold_c)` | see below — kept for three reasons, none of which is helping the tree |
-| `heating_degrees` | **linear** + tree | `max(0, heating_threshold_c - T)` | the other half of the temperature decomposition — see below |
+| `temperature` | **linear** + tree | Open-Meteo | the dominant driver; carries the slope below the breakpoint and can leave the training range in both directions |
+| `cooling_degrees` | **linear** + tree | `max(0, T - temp_breakpoint_c)` | see below — kept for two reasons, neither of which is helping the tree |
 | `trend` | **linear** + tree | days since `demand.backfill_start`, fixed origin | year-on-year growth; without it the tree pins to the final training period's level and runs low, by roughly the growth rate per year of staleness (5c) |
 
 **RULE** Once training has begun, `demand.backfill_start` **never moves**.
@@ -693,22 +720,42 @@ treat an origin change as a full rebuild.
 **RULE** Features marked `linear + tree` are passed to **both** stages. The
 Ridge stage sees only those three; LightGBM sees everything.
 
-**RULE** `heating_degrees` is not optional, even though heating load is small
-across most of India.
-
-*Rationale:* it is not an independent driver — it is the other half of the
-temperature decomposition. Demand is U-shaped in raw temperature, so
-temperature must be split into two one-sided terms before either the monotone
-constraint or the linear extrapolation stage is possible at all. Omitting it
-leaves cold extremes with no extrapolation path and the constraint only half
-applied. It is a structural requirement of the architecture, not a judgement
-about Indian winters.
+*`heating_degrees` was here, and is deleted. Its entire justification was that
+demand is U-shaped in raw temperature, so temperature had to be split into two
+one-sided terms before either the monotone constraint or the linear
+extrapolation stage was possible. Measurement disproved the premise (13): the
+V shape is not identified on any grid, and demand rises with temperature across
+the whole observed range. Raw `temperature` now carries the below-breakpoint
+slope and the extrapolation directly, `cooling_degrees` carries the constraint,
+and a deterministic transform of a column the tree already has, offered to a
+model that gains nothing from transforms, has no remaining job. The one real
+cold-side response measured — IN-NE — the tree reaches through
+temperature x zone, with `zone` a native categorical.*
 
 **RULE** Everything else is a measured candidate, added one at a time and kept
-only if the ablation shows it earning its place. Candidates: humidity, dew
-point, apparent temperature, rolling temperatures (24h/72h/168h), consecutive
-hot days, cloud cover, shortwave radiation, wind speed, precipitation,
-festival proximity, cricket match days, explicit interactions.
+only if the ablation shows it earning its place. Candidates: **day-of-year,
+cyclically encoded**, humidity, dew point, apparent temperature, rolling
+temperatures (24h/72h/168h), consecutive hot days, cloud cover, shortwave
+radiation, wind speed, precipitation, festival proximity, cricket match days,
+explicit interactions.
+
+*On day-of-year specifically: nothing in the core set represents position in the
+year. `hour_of_day`, `day_of_week`, `is_holiday`, `temperature`,
+`cooling_degrees`, `trend` and `zone` between them carry the daily cycle, the
+weekly cycle, single flagged days, the weather and the multi-year drift — but
+not the annual cycle except through temperature. Temperature carries most of it
+and not all: not daylight length, not the agricultural pumping season, not the
+festival period beyond individually flagged days.*
+
+*There is direct evidence of the gap. IN-NE's apparent cold-side response
+measures -2.26 %/C controlling only for hour and weekday, -1.62 %/C with month
+fixed effects, and **-0.71 %/C using within-month variation alone** (13). Two
+thirds of what looked like a thermal effect was position in the year, being
+absorbed by the only feature available to absorb it. That is a feature-set gap
+showing up as a distorted temperature coefficient.*
+
+*It stays a candidate rather than joining the core set: it earns its place in
+the ablation or it does not.*
 
 **RULE** No demand lag features in Phase 1.
 
@@ -726,18 +773,23 @@ lag rules in 5g.
 
 It is a deterministic function of a column already present, so a tree can
 reconstruct it by splitting. It carries no new information. It is kept for
-three reasons:
+two reasons:
 
-1. **The Ridge baseline needs it.** Ridge on raw temperature fits one straight
-   line through an elbow and is wrong at both ends. Comparing against a
-   crippled baseline proves nothing.
-2. **It enables the monotone constraint.** Demand is U-shaped in raw
-   temperature — rising in heat and in cold — so monotonicity cannot be
-   declared on it. Split into cooling and heating degrees and each is
-   individually monotone.
-3. **The extrapolation component is built on it.** The linear term that keeps
-   rising past the training range has to be a term in something, and raw
-   temperature will not serve.
+1. **The Ridge baseline needs it.** Ridge on raw temperature alone fits one
+   straight line through a slope that steepens, and is wrong at both ends.
+   Comparing against a crippled baseline proves nothing.
+2. **It carries the monotone constraint, and nothing else can.** LightGBM
+   monotone constraints are per-feature and global. Declaring one on raw
+   temperature would forbid the measured cold-side rise in IN-NE. Because
+   `cooling_degrees` is zero below the breakpoint, constraining it constrains
+   the hot tail — where the constraint is wanted — and leaves the cold side
+   free.
+
+*A third reason stood here: that the extrapolation term had to be built on it,
+because raw temperature would not serve. That was true only while the linear
+stage excluded raw temperature, which it did because of the U-shape. Raw
+temperature is now in the linear stage and carries the extrapolation itself,
+so the reason has gone.*
 
 **RULE** Include `cooling_degrees` in the ablation and report the result
 honestly. The expected finding — that it adds little to the tree while
@@ -882,9 +934,11 @@ and they flatten.
 
 **This principle is why the architecture is a hybrid rather than a single
 model.** The mechanisms are specified in section 5c (Model architecture) and
-are not repeated here: the Ridge stage carries what must extrapolate, and
-monotone constraints let physics overrule sparse evidence where data is thin
-rather than absent.
+are not repeated here: the Ridge stage carries what must extrapolate, and the
+monotone constraint on `cooling_degrees` lets physics overrule sparse evidence
+in the hot tail, where data is thin rather than absent. Note the asymmetry —
+there is no equivalent physical prior on the cold side, which is why the linear
+stage is clamped there rather than constrained (5c).
 
 The point to carry forward is the reasoning, not the mechanism: **when a new
 situation arises outside the data, the answer is to supply structure the model
@@ -896,9 +950,12 @@ cannot learn — never to trust it to generalise on its own.**
 
 Two separate obligations.
 
-**RULE** When a **weather** input exceeds the training range — `cooling_degrees`
-or `heating_degrees`, listed in `features.extrapolation_check` — flag the
-forecast as extrapolating and surface it on the dashboard. In Phase 1b, also
+**RULE** When a **weather** input exceeds the training range — `temperature`
+or `cooling_degrees`, listed in `features.extrapolation_check` — flag the
+forecast as extrapolating and surface it on the dashboard. Below the training
+range the linear stage is additionally **clamped** (5c), so the flag says the
+forecast is outside what the model knows *and* that the cold extrapolation has
+been held flat rather than continued down. In Phase 1b, also
 widen its uncertainty band.
 
 *Rationale for the narrow scope:* `trend` is outside the training range on every
@@ -947,30 +1004,38 @@ engineering project. The target is honesty and safety at 50 C, not accuracy.*
 Training data topped out at 46 C. Tomorrow's forecast says 48 C at 20:00.
 
 ```
-1  FEATURE        cooling_degrees = 48 - 24 = 24
-                  training maximum was 22          <- outside the data
+1  FEATURES       temperature     = 48.0
+                  cooling_degrees = 48 - 21.5 = 26.5
+                  the training maximum of temperature is 48.6 in IN-NO and
+                  below 44 in every other zone, so this is at or past the
+                  edge of the data for any zone but IN-NO
 
-2  RIDGE          log space: base 10.71 + 0.015 x 24 = 11.07
-                  the line does not care that 24 is unprecedented
+2  RIDGE          both terms are live: the shallow slope on temperature
+                  everywhere, the steeper one on cooling_degrees above 21.5.
+                  the line does not care that the value is unprecedented
 
-3  TREE           seeks a split above cooling_degrees 22, finds none,
-                  falls back to its top bin
-                  contributes +0.017 on the residual (evening, weekday, June)
+3  TREE           seeks a split above its top observed cooling_degrees,
+                  finds none, falls back to its top bin
+                  contributes a small residual (evening, weekday, June)
 
-4  PREDICTION     exp(11.07 + 0.017) x smearing  ->  ~65,300 MW
+4  PREDICTION     exp(ridge + tree) x smearing
 
-                  for comparison: a tree alone would flatten above its
-                  top split and say ~62,000 MW - 3,300 MW low, silently
+                  for comparison: a tree alone would flatten above its top
+                  split and run low, silently. that gap is the reason the
+                  linear stage exists
 
-5  RANGE CHECK    24 > 22  ->  flag EXTRAPOLATING
+5  RANGE CHECK    temperature and cooling_degrees both past their training
+                  maxima  ->  flag EXTRAPOLATING
 
 6  UNCERTAINTY    Phase 1b only - band widened. Phase 1 emits the flag
                   and the marker, no band.
 
 7  DASHBOARD      shown with a warning marker, not as a normal number
 
-8  MONOTONICITY   constraint guaranteed the tree contribution could not
-                  be negative here
+8  MONOTONICITY   the constraint on cooling_degrees guaranteed the tree
+                  contribution could not be negative here. raw temperature
+                  is unconstrained, which costs nothing in the hot tail
+                  because cooling_degrees is what moves there
 
 9  EVALUATION     once settled, scored in the ">45 C" band, never folded
                   into the headline average
@@ -999,8 +1064,10 @@ metric for all three is the common failure.
 PRIMARY      MASE, mean across folds
 CO-PRIMARY   RMSSE - must improve or hold
 
-VETO if:     top temperature band worse by more than
+VETO if:     top REPORTABLE temperature band worse by more than
                  evaluate.veto_tolerance.top_band_pct
+                 (the highest band holding at least
+                  evaluate.insufficient_band_rows rows - see below)
              |signed bias| worse by more than
                  evaluate.veto_tolerance.signed_bias_pct
              shortfall frequency up by more than
@@ -1019,9 +1086,26 @@ is derived from that metric's own fold-to-fold spread in the step 9 backtest and
 recorded in section 13.
 
 *Rationale:* "worse in the top temperature band" with no tolerance vetoes on a
-0.001% move, and the `> 45 C` band has the fewest rows in the table, so its
+0.001% move, and the top band has the fewest rows in the table, so its
 fold-to-fold variation is the largest. An untoleranced veto rejects every
 challenger on noise from the smallest sample in the report.
+
+**RULE** The band this veto reads is the **highest band holding at least
+`evaluate.insufficient_band_rows` rows**, not the highest band that exists. As
+measured, that is 40-45 C at 1,102 rows; the `> 45 C` band holds **25**. The
+`> 45 C` band is still computed, still reported, and still flagged insufficient
+— it simply never gates a promotion.
+
+*Rationale:* a veto evaluated on 25 rows is not a quality check, it is a coin
+toss that rejects challengers at random, and 13's band-sufficiency rule already
+says a band that thin is reported as "insufficient rows to judge" rather than as
+a number. A figure too weak to quote is too weak to veto on.
+
+*The loss is real and belongs in the model card rather than buried here: the
+band this project most wants to be good at is the one it has least evidence
+about. Twenty-five hours above 45 C, all of them in IN-NO, is what one weather
+point per zone over nine years buys. A second point per zone — a Phase 2
+candidate in 5e — is the direct remedy.*
 
 *Rationale for the co-primary:* MASE is built on mean **absolute** error,
 which is linear and therefore treats errors as interchangeable regardless of
@@ -2097,8 +2181,8 @@ from a number that was always guessed.
 
 | Config key | Placeholder | How to measure | Measurable after |
 |---|---|---|---|
-| `features.cooling_threshold_c` | 24.0 | plot demand against temperature, find where the slope changes | step 0 |
-| `features.heating_threshold_c` | 15.0 | same plot, the cold-side inflection | step 0 |
+| `features.temp_breakpoint_c` | **21.5 (measured 2026-09-08)** — renamed from `cooling_threshold_c` | RSS-minimising breakpoint of the identified `sloped_below` fit, held-out scored | step 0 |
+| `features.heating_threshold_c` | **deleted (2026-09-08)** — no U-shape, so no cold inflection to hold a threshold | — | step 0 |
 | `evaluate.temperature_bands_c` | 20/30/40/45 | band occupancy, under the sufficiency rule below | step 0 |
 | `splits.purge_gap_days` | 10 | `data/raw/demand_revisions/` — how long until `is_estimated` flips | ~4 weeks of daily runs |
 | `drift.settlement_lag_days` | not set | distribution of measured-minus-created age in `data/raw/demand_revisions/`; report median and P95 | ~4 weeks of daily runs |
@@ -2147,7 +2231,7 @@ and a quoted figure has to come from somewhere.
 
 ### The two that matter most
 
-**`cooling_threshold_c`** — every cooling-degree feature, the monotone
+**`temp_breakpoint_c`** — every cooling-degree feature, the monotone
 constraint and the linear extrapolation stage are all built on it. If the real
 elbow is at 27 C and the config says 24, every one of those is subtly wrong
 from the first commit onward. **Measure it before writing `features/build.py`.**

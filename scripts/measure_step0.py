@@ -735,8 +735,7 @@ def make_plots(df: pd.DataFrame, cfg: dict, tier: str, out_dir: pathlib.Path) ->
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     sub = tier_subset(df, tier)
-    cool = get(cfg, "features.cooling_threshold_c")
-    heat = get(cfg, "features.heating_threshold_c")
+    breakpoint_c = get(cfg, "features.temp_breakpoint_c")
 
     # 1. The elbow, adjusted, binned so 400k points are readable
     fig, axes = plt.subplots(1, 2, figsize=(13, 5))
@@ -750,10 +749,8 @@ def make_plots(df: pd.DataFrame, cfg: dict, tier: str, out_dir: pathlib.Path) ->
         agg = binned.groupby("bin")["y"].agg(["mean", "size"])
         agg = agg[agg["size"] >= 30]
         ax.plot(agg.index, agg["mean"], lw=1.6, color="#1f4e79")
-        ax.axvline(cool, ls="--", c="#c0392b", lw=1,
-                   label=f"config cooling_threshold_c = {cool}")
-        ax.axvline(heat, ls="--", c="#2874a6", lw=1,
-                   label=f"config heating_threshold_c = {heat}")
+        ax.axvline(breakpoint_c, ls="--", c="#c0392b", lw=1,
+                   label=f"config temp_breakpoint_c = {breakpoint_c}")
         ax.set_xlabel("temperature (C)")
         ax.set_ylabel(label)
         ax.set_title(label, fontsize=10)
@@ -775,7 +772,7 @@ def make_plots(df: pd.DataFrame, cfg: dict, tier: str, out_dir: pathlib.Path) ->
         agg = b.groupby("bin")["y"].agg(["mean", "size"])
         agg = agg[agg["size"] >= 30]
         ax.plot(agg.index, agg["mean"], lw=1.4, label=zone)
-    ax.axvline(cool, ls="--", c="#c0392b", lw=1)
+    ax.axvline(breakpoint_c, ls="--", c="#c0392b", lw=1)
     ax.set_xlabel("temperature (C)")
     ax.set_ylabel("adjusted log(demand)")
     ax.set_title(f"Per-zone temperature response — tier: {tier}")
@@ -846,6 +843,46 @@ def make_plots(df: pd.DataFrame, cfg: dict, tier: str, out_dir: pathlib.Path) ->
 
 # --------------------------------------------------------------------------
 
+def cold_side_seasonality(df: pd.DataFrame, cfg: dict,
+                          threshold: float = 18.5) -> pd.DataFrame:
+    """Is the cold-side response temperature, or is it December?
+
+    "Colder means more demand" and "December means more demand" are
+    indistinguishable while the only controls are hour and weekday. In the
+    northeast December is not only cold.
+    """
+    sub = tier_subset(df, "measured+MODE", cfg)
+    rows = []
+    for zone, g in sub.groupby("zone", observed=True):
+        gg = g[g["temperature_2m"] < threshold]
+        if len(gg) < 500:
+            rows.append({"zone": zone, "rows": len(gg), "note": "too few rows"})
+            continue
+        y = (gg["log_demand"] - gg.groupby(["hour_ist", "weekday_ist"])["log_demand"]
+                                  .transform("mean")).to_numpy()
+        temp = gg["temperature_2m"].to_numpy(float)
+
+        s_plain = np.polyfit(temp, y, 1)[0]
+
+        cols = [np.ones_like(temp), temp]
+        for mo in sorted(gg["month_ist"].unique())[1:]:
+            cols.append((gg["month_ist"] == mo).astype(float).to_numpy())
+        s_month = np.linalg.lstsq(np.column_stack(cols), y, rcond=None)[0][1]
+
+        key = [gg["year_ist"], gg["month_ist"]]
+        yd = y - pd.Series(y, index=gg.index).groupby(key).transform("mean").to_numpy()
+        td = temp - gg.groupby(["year_ist", "month_ist"])["temperature_2m"] \
+                      .transform("mean").to_numpy()
+        s_within = np.polyfit(td, yd, 1)[0] if np.ptp(td) > 0 else np.nan
+
+        pct = lambda s: round((np.exp(s) - 1) * 100, 2)      # noqa: E731
+        rows.append({"zone": zone, "rows": len(gg),
+                     "hour_wday_only_pct_per_c": pct(s_plain),
+                     "plus_month_fe_pct_per_c": pct(s_month),
+                     "within_month_pct_per_c": pct(s_within)})
+    return pd.DataFrame(rows)
+
+
 def volatility_table_df(df: pd.DataFrame, window_days: int = 90) -> pd.DataFrame:
     """Hour-to-hour variability either side of each zone's own switch date."""
     rows = []
@@ -905,6 +942,7 @@ def main() -> None:
     robustness = (robustness.pivot(index="zone", columns="window_months",
                                    values="exceeds_placebo")
                             .reset_index())
+    seasonality = cold_side_seasonality(df, cfg)
     specs = pd.concat([compare_specifications(df, tr)
                        for tr in ("measured", "measured+MODE")], ignore_index=True)
     bands = band_occupancy(df, cfg, tier)
@@ -925,14 +963,14 @@ def main() -> None:
 
     origin = get(cfg, "demand.backfill_start")
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
-    cfg_cool = get(cfg, "features.cooling_threshold_c")
-    cfg_heat = get(cfg, "features.heating_threshold_c")
+    cfg_breakpoint = get(cfg, "features.temp_breakpoint_c")
 
     spread_text = f"{spread:.2f} C" if spread is not None else "not identified"
     discontinuity_table = md_table(discontinuity)
     relationship_table = md_table(relationship)
     robustness_table = md_table(robustness)
     spec_table = md_table(specs)
+    seasonality_table = md_table(seasonality)
     volatility_table = md_table(volatility_table_df(df))
     threshold_table = md_table(thresholds)
     zone_threshold_table = md_table(zone_thresholds)
@@ -1034,10 +1072,10 @@ now excludes pre-switch rows for IN-NE and IN-EA and keeps the rest. The model
 pools rows and does not require equal spans.
 
 Worth stating plainly, because it is the opposite of what the variance result
-suggested: **IN-EA had by far the largest variance change — a 6.5-fold drop —
-and its relationship is among the most stable.** Noise there blurs rather than
-distorts, which is exactly the distinction that makes the tier decision
-survivable.
+suggested: **IN-EA had the largest variance change and among the most stable
+relationships. Noise that blurs is not noise that distorts.** That distinction
+was the whole basis for keeping tier 2, and it survived a test that could have
+killed it.
 
 ## Which shape actually fits
 
@@ -1071,7 +1109,60 @@ explicitly, and identifiably.
 constrain, so the constraint would be applied to a term that is absorbing the
 shallower lower segment of a monotone relationship.
 
-## The thresholds — `features.cooling_threshold_c` and `heating_threshold_c`
+## What was decided about `heating_degrees`
+
+Added to the identified `sloped_below` specification and scored on the same
+holdout, it improves RMSE by 0.263% on the measured tier — but the improvement
+is a degenerate fit, not a heating load. Decomposed into net slopes:
+
+```
+T < 18.5     +0.86 %/C      8,340 rows
+18.5 - 20.0  +6.35 %/C      3,341 rows      <- the whole gain lives here
+T > 20.0     +0.21 %/C     48,430 rows      <- the cooling slope, flattened
+```
+
+Demand rises with temperature in all three segments. The gain is bought by a
++6.35 %/C sliver 1.5 C wide on 5.6% of rows, paid for by flattening the cooling
+segment to +0.21 %/C — a fit that has stopped modelling the thing this project
+exists to model. The three raw coefficients (+0.0615, -0.0594, +0.0530) are
+large and offsetting; over a 1.5 C window the terms are near-collinear.
+
+`heating_degrees` is **deleted from the feature set entirely**, linear stage and
+tree. Its 5e justification was the U-shape, which is gone; and 5e's own three
+reasons for keeping `cooling_degrees` despite being a deterministic transform of
+a present column — the Ridge baseline needs it, it carries the constraint, the
+extrapolation is built on it — none survive for `heating_degrees` now that it is
+out of the linear stage, unconstrained, and not carrying extrapolation. The one
+real cold response measured, IN-NE, the tree reaches through temperature x zone.
+
+### Is IN-NE's cold response temperature, or December?
+
+{seasonality_table}
+
+Two thirds of IN-NE's apparent cold-side response is position in the year, not
+cold: -2.26 %/C controlling for hour and weekday, -1.62 %/C with month fixed
+effects, **-0.71 %/C on within-month variation alone**. A real thermal component
+survives, and it is a third of what the naive estimate said.
+
+This is direct evidence of a feature-set gap. Nothing in the core set represents
+position in the year, so the only feature able to absorb the seasonal signal was
+temperature — and it did, as a distorted coefficient. Day-of-year, cyclically
+encoded, joins the stage 2 ablation candidate list. It is not added to the core
+set; it earns its place or it does not.
+
+### The monotone constraint
+
+LightGBM monotone constraints are per-feature and **global**, never
+zone-conditional. Constraining raw `temperature` increasing — which the new
+linear stage would otherwise invite — would make IN-NE's measured cold-side rise
+structurally unrepresentable, forbidding the model from learning an effect
+measured on 2,905 rows.
+
+`features.monotone_increasing` is therefore `[cooling_degrees]` only.
+`cooling_degrees` is zero below the breakpoint, so constraining it constrains the
+hot tail — where the constraint is wanted — and leaves the cold side free.
+
+## The temperature breakpoint — `features.temp_breakpoint_c`
 
 Method, per ruling: RSS-minimising grid search on `log(demand)`, pooled, run
 both naively and with zone, hour-of-day and weekday means removed first.
@@ -1087,7 +1178,9 @@ rather than as a number. The model fitted is the one the features actually use:
 y ~ 1 + max(0, T - cooling) + max(0, heating - T),    heating < cooling
 ```
 
-Config currently holds cooling **{cfg_cool} C**, heating **{cfg_heat} C**.
+Config now holds **{cfg_breakpoint} C**, measured. `heating_threshold_c` is
+deleted: there is no U-shape, so there is no cold inflection to hold a
+threshold, and `heating_degrees` is removed from the feature set entirely.
 
 {threshold_table}
 
@@ -1121,6 +1214,34 @@ below `insufficient_band_rows` reported as insufficient rather than as a number.
 ### By zone
 
 {md_table(bands_zone.reset_index())}
+
+### The band the project most wants to be good at is the one it knows least
+
+The `> 45 C` band holds **25 rows, every one of them IN-NO**. The `40 - 45 C`
+band holds 1,102, of which 1,043 are IN-NO. The hot tail is, in this dataset,
+Delhi.
+
+Two consequences, both stated rather than worked around.
+
+**The top-band veto reads the top REPORTABLE band.** 5g lists "worse in the top
+temperature band" as a veto on promotion. Evaluated on 25 rows that is not a
+quality check, it is a coin toss that would reject challengers at random. The
+veto now reads the highest band holding at least `insufficient_band_rows` rows —
+in practice `40 - 45 C`. The `> 45 C` band is still computed, still reported,
+still flagged insufficient, and never gates a promotion. 13's rule already says
+a band that thin is reported as "insufficient rows to judge" rather than as a
+number; a figure too weak to quote is too weak to veto on.
+
+**Zone-by-band stratification has empty cells by construction.** Three zones have
+no rows at all above 40 C. 5g's stratified table must render that as absent
+rather than as zero error.
+
+*This is the honest loss, and it belongs in the model card rather than buried
+here: nine years of history and one weather point per zone buys 25 hours above
+45 C. 5f's whole argument is that the model is least reliable exactly where it
+matters most — this is the measurement of how little evidence there is to be
+reliable on. A second weather point per zone, already a Phase 2 candidate in 5e,
+is the direct remedy.*
 
 ## Suppressed-demand candidates — `quality.suppression_*`
 

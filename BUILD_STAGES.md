@@ -46,8 +46,8 @@ All five build stages below deliver `PLANNING.md`'s **Phase 1**.
 
 | Stage | Name | State |
 |---|---|---|
-| 1 | Foundation and Measurement | IN PROGRESS |
-| 2 | Features and the Baseline | BLOCKED — needs stage 1 |
+| 1 | Foundation and Measurement | COMPLETE (19bc464) |
+| 2 | Features and the Baseline | READY — awaiting PR review |
 | 3 | Model and Tuning | BLOCKED — needs stage 2 |
 | 4 | Monitoring, Registry, Daily Job | BLOCKED — needs stage 3 |
 | 5 | Dashboard, Deploy, Evidence | BLOCKED — needs stage 4 |
@@ -136,37 +136,37 @@ and the measurement script.
 
 ### Deliverables
 
-- [ ] `make setup` works from a clean clone, building the venv from Python 3.12
-- [ ] Docker image builds; CI runs green on the stage-1 PR
-- [ ] `dvc init` done, remote configured, `dvc push` succeeds
-- [ ] Electricity Maps history depth **probed**, `demand.backfill_start` set to
+- [x] `make setup` works from a clean clone, building the venv from Python 3.12
+- [x] Docker image builds; CI runs green on the stage-1 PR
+- [x] `dvc init` done, remote configured, `dvc push` succeeds
+- [x] Electricity Maps history depth **probed**, `demand.backfill_start` set to
       the true earliest available data rather than a guessed date. If the origin
       moves, say so in the report — `trend` is defined from that date
-- [ ] EM rate-limit headers read on the first response and reported: what the
+- [x] EM rate-limit headers read on the first response and reported: what the
       academic licence actually allows
-- [ ] `data/raw/` populated for all five zones over the full available history
-- [ ] `data/raw/` weather archive cached for every zone point over the same span
-- [ ] `src/validate.py` passes on the pulled data, and **fails** on a
+- [x] `data/raw/` populated for all five zones over the full available history
+- [x] `data/raw/` weather archive cached for every zone point over the same span
+- [x] `src/validate.py` passes on the pulled data, and **fails** on a
       deliberately corrupted copy (prove the check works)
-- [ ] `scripts/archive_daily.py` runs and writes a first weather vintage and a
+- [x] `scripts/archive_daily.py` runs and writes a first weather vintage and a
       first demand-revision snapshot
-- [ ] **`.github/workflows/archive.yml` live and green** — archive and
+- [x] **`.github/workflows/archive.yml` live and green** — archive and
       `dvc push`, nothing else
-- [ ] `reports/step0_measurements.md` exists, with plots, covering:
+- [x] `reports/step0_measurements.md` exists, with plots, covering:
       demand vs temperature (the elbow), the cold-side inflection, band
       occupancy, candidate suppressed-demand hours, year-on-year growth,
       holiday vs matched non-holiday demand
-- [ ] The elbow fitted by the method below, **both ways**, both numbers reported
-- [ ] Per-zone elbows reported as evidence. If they spread by more than about
+- [x] The elbow fitted by the method below, **both ways**, both numbers reported
+- [x] Per-zone elbows reported as evidence. If they spread by more than about
       2 C, say so plainly — that is phase 2 evidence for a per-zone map, not a
       phase 1 change
-- [ ] `config/config.yaml` updated with the **measured** values for the
+- [x] `config/config.yaml` updated with the **measured** values for the
       temperature breakpoint and `evaluate.temperature_bands_c`, plus
       `evaluate.min_band_rows: 500`. **`quality.suppression_*` moved to
       stage 2** — see below
-- [ ] `PLANNING.md` section 13 table cells updated to the measured value followed
+- [x] `PLANNING.md` section 13 table cells updated to the measured value followed
       by `(measured YYYY-MM-DD)`; value, date and method in the commit message
-- [ ] `README.md` rewritten to match the shipped design — see below
+- [x] `README.md` rewritten to match the shipped design — see below
 
 ### How the elbow is measured
 
@@ -294,6 +294,7 @@ Nothing new. Stage 1 complete.
 | `src/features/weather_feats.py` | cooling/heating degrees, per city then aggregate | 5e |
 | `src/features/forecast_noise.py` | training-time weather noise, applied to raw temperature **before** the degree transforms | 5d |
 | `src/features/build.py` | THE feature builder. Training and serving both call this | INV-9 |
+| — | **day-of-year, cyclically encoded**, joins the ablation candidate list — nothing in the core set represents position in the year, and 13 measures two thirds of IN-NE's apparent cold response as seasonal rather than thermal | 5e |
 | `src/backtest/splits.py` | tuning window, folds, purge gap, holdout | 5c |
 | `src/models/baselines.py` | seasonal naive, hour x weekday, ridge-all, per-zone | 5c |
 | `src/backtest/metrics.py` | MAPE, MASE, RMSSE, stratified reporting, signed bias | 5g |
@@ -376,6 +377,10 @@ overnight and do not silently exceed the budget.
       cannot support the full twelve-fold protocol, so run a reduced comparison
       — fewer folds, shorter initial train — and say so explicitly in the
       report
+- [ ] **Does including IN-EA pre-switch data help?** Its exclusion in
+      `quality.trainable_from` was a judgement call recorded as reversible — it
+      exceeded the relationship-test placebo band at two of four window lengths,
+      not all four. Run it both ways and put a number on it
 
 **This is a GATE, not merely a deliverable.** The final model does not ship
 until that number exists. The stage-1 relationship test *predicts* that the
@@ -522,5 +527,66 @@ reported. Model card lists remaining placeholders honestly.
 *Append one entry per completed stage. Do not edit earlier entries.*
 
 ```
-(empty)
+STAGE 1 — Foundation and Measurement
+Completed 2026-09-08. Branch stage-1, PR into main.
+
+ENVIRONMENT
+  make setup            venv built from Python 3.12 explicitly, exact pins
+                        throughout; verified from a clean clone. libomp
+                        guard added after LightGBM failed at dlopen.
+  Dockerfile            base pinned by digest, not tag. Verified by CI, not
+                        locally — Docker Desktop was down, and the ruling
+                        was to tick this against the CI run.
+  ci.yml                green. Lint, invariant tests, image build, and the
+                        tests run again INSIDE the image.
+  DVC                   init, gdrive remote, 12 files pushed. The gdrive
+                        dependency chain had to be pinned to resolve at all.
+
+DATA
+  demand                5 zones, ~84,900 rows each, 2017-01-01 to 2026-09-08,
+                        ZERO gaps, validated, DVC-tracked.
+  weather               5 points, 84,744 rows each, same span, zero gaps and
+                        zero null temperatures.
+  archive               running. Vintages and revisions written; archive.yml
+                        scheduled at 04:30 UTC = 10:00 IST, the issue time.
+
+VALIDATION
+  Passes on all five real files. Fails on seven deliberate corruptions of a
+  real file: Fahrenheit, renamed column, naive timestamps, IST timestamps,
+  duplicate hour, five-hour hole, all-null column.
+
+MEASUREMENTS  (reports/step0_measurements.md)
+  temp_breakpoint_c     21.5, renamed from cooling_threshold_c
+  heating_threshold_c   DELETED
+  temperature_bands_c   [20,30,40,45] CONFIRMED by occupancy, not changed
+  min_band_rows         500, insufficient_band_rows 200
+  suppression_*         MOVED TO STAGE 2 — the delta detector fired on
+                        3-11% of hours, which is morning warming, not
+                        load shedding
+  EM history            2017-01, not "at least 4 years"
+  EM rate limit         2400 req / 60 s
+  EM range limit        10 days per hourly call
+
+FOUR THINGS THE SPECIFICATION GOT WRONG, ALL MEASURED
+  INV-3's premise       three estimation methods, not one. Rewritten to key
+                        on method via quality.trainable_estimation_methods.
+  The U-shape           not identified on any grid. Demand rises with
+                        temperature throughout. heating_degrees deleted,
+                        5c/5e/5f swept.
+  The monotone target   constraints are global, so constraining raw
+                        temperature would forbid IN-NE's measured cold rise.
+                        Constraint moved to cooling_degrees only.
+  The top-band veto     25 rows above 45 C, all IN-NO. Veto now reads the
+                        highest band with >= 200 rows.
+
+GATES PASSED
+  Discontinuity test    level clean in 4/5 zones against placebo bands.
+  Relationship test     slope stable in 4/5. IN-NE and IN-EA get later
+                        trainable starts; the other three keep the B span.
+
+CARRIED FORWARD
+  Stage 2  suppression detector + its three sanity checks; day-of-year
+           cyclic joins the ablation candidates.
+  Stage 3  estimation-tier ablation, now a GATE; plus "does including
+           IN-EA pre-switch data help?"
 ```

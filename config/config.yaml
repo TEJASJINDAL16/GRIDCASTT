@@ -55,15 +55,37 @@ weather:
 # Thresholds are starting values. Find the real elbow from the data and
 # replace them; do not leave a guess in place once it can be measured.
 features:
-  cooling_threshold_c: 24.0
-  heating_threshold_c: 15.0
+  # MEASURED 2026-09-08 (was cooling_threshold_c: 24.0, a guess). RENAMED:
+  # this is NOT an elbow above which cooling begins. Demand is monotone
+  # increasing in temperature across the whole observed range; this is the
+  # breakpoint at which an already-positive slope STEEPENS. The old name would
+  # mislead every future reader. See 13 and reports/step0_measurements.md.
+  temp_breakpoint_c: 21.5
+  # heating_threshold_c DELETED. There is no U-shape and no pooled cold-side
+  # rise, so there is no cold inflection to hold a threshold. See 13.
   rolling_temp_windows_h: [24, 72, 168]
   # Passed to BOTH stages. The Ridge stage sees only these.
-  linear_stage_features: [cooling_degrees, heating_degrees, trend]
-  monotone_increasing: [cooling_degrees, heating_degrees]
-  # Only these are range-checked for the `extrapolating` flag. NOT trend -
-  # trend is out of range on every forecast by construction (5c/5f).
-  extrapolation_check: [cooling_degrees, heating_degrees]
+  # temperature carries the slope below the breakpoint; cooling_degrees adds
+  # the steeper slope above it. Together they reproduce the identified
+  # `sloped_below` specification exactly.
+  linear_stage_features: [temperature, cooling_degrees, trend]
+  # cooling_degrees ONLY. LightGBM monotone constraints are per-feature and
+  # GLOBAL, never zone-conditional, so constraining raw temperature would make
+  # IN-NE's measured cold-side rise structurally unrepresentable. Because
+  # cooling_degrees is zero below the breakpoint, constraining it constrains
+  # the hot side and nothing else, leaving the cold side free.
+  monotone_increasing: [cooling_degrees]
+  # Range-checked for the `extrapolating` flag. NOT trend - trend is out of
+  # range on every forecast by construction (5c/5f). temperature is here now
+  # because it is a linear-stage feature and can leave the range either way.
+  extrapolation_check: [temperature, cooling_degrees]
+  # The linear stage extrapolates FREELY above the training range and is
+  # CLAMPED at the training minimum below it (5f Principle 4). Asymmetric on
+  # purpose: above the range there is a physical prior - hotter means more
+  # cooling load - and it is the direction climate and AC penetration both
+  # move. Below it there is no prior, no pooled heating load, and the error
+  # would lean toward under-forecast, which is the dangerous direction.
+  clamp_linear_below: true
 
 # --- Data quality ---
 quality:

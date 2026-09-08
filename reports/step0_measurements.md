@@ -1,6 +1,6 @@
 # Step-0 measurements
 
-Generated 2026-09-08 10:20 UTC by `scripts/measure_step0.py`.
+Generated 2026-09-08 14:47 UTC by `scripts/measure_step0.py`.
 
 PLANNING 12: the specification was written against data nobody had looked at.
 This report replaces the section 13 step-0 assumptions with numbers, and says
@@ -124,10 +124,10 @@ now excludes pre-switch rows for IN-NE and IN-EA and keeps the rest. The model
 pools rows and does not require equal spans.
 
 Worth stating plainly, because it is the opposite of what the variance result
-suggested: **IN-EA had by far the largest variance change — a 6.5-fold drop —
-and its relationship is among the most stable.** Noise there blurs rather than
-distorts, which is exactly the distinction that makes the tier decision
-survivable.
+suggested: **IN-EA had the largest variance change and among the most stable
+relationships. Noise that blurs is not noise that distorts.** That distinction
+was the whole basis for keeping tier 2, and it survived a test that could have
+killed it.
 
 ## Which shape actually fits
 
@@ -168,7 +168,66 @@ explicitly, and identifiably.
 constrain, so the constraint would be applied to a term that is absorbing the
 shallower lower segment of a monotone relationship.
 
-## The thresholds — `features.cooling_threshold_c` and `heating_threshold_c`
+## What was decided about `heating_degrees`
+
+Added to the identified `sloped_below` specification and scored on the same
+holdout, it improves RMSE by 0.263% on the measured tier — but the improvement
+is a degenerate fit, not a heating load. Decomposed into net slopes:
+
+```
+T < 18.5     +0.86 %/C      8,340 rows
+18.5 - 20.0  +6.35 %/C      3,341 rows      <- the whole gain lives here
+T > 20.0     +0.21 %/C     48,430 rows      <- the cooling slope, flattened
+```
+
+Demand rises with temperature in all three segments. The gain is bought by a
++6.35 %/C sliver 1.5 C wide on 5.6% of rows, paid for by flattening the cooling
+segment to +0.21 %/C — a fit that has stopped modelling the thing this project
+exists to model. The three raw coefficients (+0.0615, -0.0594, +0.0530) are
+large and offsetting; over a 1.5 C window the terms are near-collinear.
+
+`heating_degrees` is **deleted from the feature set entirely**, linear stage and
+tree. Its 5e justification was the U-shape, which is gone; and 5e's own three
+reasons for keeping `cooling_degrees` despite being a deterministic transform of
+a present column — the Ridge baseline needs it, it carries the constraint, the
+extrapolation is built on it — none survive for `heating_degrees` now that it is
+out of the linear stage, unconstrained, and not carrying extrapolation. The one
+real cold response measured, IN-NE, the tree reaches through temperature x zone.
+
+### Is IN-NE's cold response temperature, or December?
+
+| zone   |   rows |   hour_wday_only_pct_per_c |   plus_month_fe_pct_per_c |   within_month_pct_per_c |
+|:-------|-------:|---------------------------:|--------------------------:|-------------------------:|
+| IN-EA  |   1854 |                       0.03 |                     -0.12 |                    -0.35 |
+| IN-NE  |   2905 |                      -2.26 |                     -1.62 |                    -0.71 |
+| IN-NO  |  13998 |                       0.41 |                      0.48 |                     0.38 |
+| IN-SO  |   4739 |                       0.52 |                      0.57 |                     0.61 |
+| IN-WE  |    536 |                       5.42 |                      4.75 |                     2.23 |
+
+Two thirds of IN-NE's apparent cold-side response is position in the year, not
+cold: -2.26 %/C controlling for hour and weekday, -1.62 %/C with month fixed
+effects, **-0.71 %/C on within-month variation alone**. A real thermal component
+survives, and it is a third of what the naive estimate said.
+
+This is direct evidence of a feature-set gap. Nothing in the core set represents
+position in the year, so the only feature able to absorb the seasonal signal was
+temperature — and it did, as a distorted coefficient. Day-of-year, cyclically
+encoded, joins the stage 2 ablation candidate list. It is not added to the core
+set; it earns its place or it does not.
+
+### The monotone constraint
+
+LightGBM monotone constraints are per-feature and **global**, never
+zone-conditional. Constraining raw `temperature` increasing — which the new
+linear stage would otherwise invite — would make IN-NE's measured cold-side rise
+structurally unrepresentable, forbidding the model from learning an effect
+measured on 2,905 rows.
+
+`features.monotone_increasing` is therefore `[cooling_degrees]` only.
+`cooling_degrees` is zero below the breakpoint, so constraining it constrains the
+hot tail — where the constraint is wanted — and leaves the cold side free.
+
+## The temperature breakpoint — `features.temp_breakpoint_c`
 
 Method, per ruling: RSS-minimising grid search on `log(demand)`, pooled, run
 both naively and with zone, hour-of-day and weekday means removed first.
@@ -184,7 +243,9 @@ rather than as a number. The model fitted is the one the features actually use:
 y ~ 1 + max(0, T - cooling) + max(0, heating - T),    heating < cooling
 ```
 
-Config currently holds cooling **24.0 C**, heating **15.0 C**.
+Config now holds **21.5 C**, measured. `heating_threshold_c` is
+deleted: there is no U-shape, so there is no cold inflection to hold a
+threshold, and `heating_degrees` is removed from the feature set entirely.
 
 | tier           |   rows |   naive_cool_c |   naive_heat_c |   adj_cool_c |   adj_heat_c |   adj_cool_pct_per_c |   adj_heat_pct_per_c | note                                       |
 |:---------------|-------:|---------------:|---------------:|-------------:|-------------:|---------------------:|---------------------:|:-------------------------------------------|
@@ -240,6 +301,34 @@ below `insufficient_band_rows` reported as insufficient rather than as a number.
 | IN-NO  |  16298 |     25710 |     15101 |      1043 |     25 |
 | IN-SO  |  11022 |     42487 |      4668 |         0 |      0 |
 | IN-WE  |   1535 |     46312 |     10325 |         5 |      0 |
+
+### The band the project most wants to be good at is the one it knows least
+
+The `> 45 C` band holds **25 rows, every one of them IN-NO**. The `40 - 45 C`
+band holds 1,102, of which 1,043 are IN-NO. The hot tail is, in this dataset,
+Delhi.
+
+Two consequences, both stated rather than worked around.
+
+**The top-band veto reads the top REPORTABLE band.** 5g lists "worse in the top
+temperature band" as a veto on promotion. Evaluated on 25 rows that is not a
+quality check, it is a coin toss that would reject challengers at random. The
+veto now reads the highest band holding at least `insufficient_band_rows` rows —
+in practice `40 - 45 C`. The `> 45 C` band is still computed, still reported,
+still flagged insufficient, and never gates a promotion. 13's rule already says
+a band that thin is reported as "insufficient rows to judge" rather than as a
+number; a figure too weak to quote is too weak to veto on.
+
+**Zone-by-band stratification has empty cells by construction.** Three zones have
+no rows at all above 40 C. 5g's stratified table must render that as absent
+rather than as zero error.
+
+*This is the honest loss, and it belongs in the model card rather than buried
+here: nine years of history and one weather point per zone buys 25 hours above
+45 C. 5f's whole argument is that the model is least reliable exactly where it
+matters most — this is the measurement of how little evidence there is to be
+reliable on. A second weather point per zone, already a Phase 2 candidate in 5e,
+is the direct remedy.*
 
 ## Suppressed-demand candidates — `quality.suppression_*`
 
