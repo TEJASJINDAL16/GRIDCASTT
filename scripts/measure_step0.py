@@ -89,12 +89,27 @@ def load_joined(cfg: dict) -> pd.DataFrame:
     return df
 
 
-def tier_subset(df: pd.DataFrame, tier: str) -> pd.DataFrame:
+def tier_subset(df: pd.DataFrame, tier: str, cfg: dict | None = None) -> pd.DataFrame:
+    """Rows in the given tier, honouring quality.trainable_from when cfg is passed.
+
+    The per-zone starts exist because the relationship test found the
+    temperature slope moving across the switch in IN-NE and IN-EA by more than
+    those zones' own placebo bands (13).
+    """
     if tier == "measured":
-        return df[df["tier"] == "measured"]
-    if tier == "measured+MODE":
-        return df[df["tier"].isin(["measured", "MODE_BREAKDOWN"])]
-    return df[df["tier"] != "TIME_SLICER_AVERAGE"]
+        sub = df[df["tier"] == "measured"]
+    elif tier == "measured+MODE":
+        sub = df[df["tier"].isin(["measured", "MODE_BREAKDOWN"])]
+    else:
+        sub = df[df["tier"] != "TIME_SLICER_AVERAGE"]
+    if cfg is None:
+        return sub
+    starts = get(cfg, "quality.trainable_from")
+    keep = pd.Series(True, index=sub.index)
+    for zone, start in starts.items():
+        cutoff = pd.Timestamp(start, tz="UTC")
+        keep &= ~((sub["zone"] == zone) & (sub["datetime_utc"] < cutoff))
+    return sub[keep]
 
 
 # --------------------------------------------------------------------------

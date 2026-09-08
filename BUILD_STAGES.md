@@ -160,10 +160,10 @@ and the measurement script.
 - [ ] Per-zone elbows reported as evidence. If they spread by more than about
       2 C, say so plainly — that is phase 2 evidence for a per-zone map, not a
       phase 1 change
-- [ ] `config/config.yaml` updated with the **measured** values for
-      `features.cooling_threshold_c`, `features.heating_threshold_c`,
-      `evaluate.temperature_bands_c`, `quality.suppression_*`, plus
-      `evaluate.min_band_rows: 500`
+- [ ] `config/config.yaml` updated with the **measured** values for the
+      temperature breakpoint and `evaluate.temperature_bands_c`, plus
+      `evaluate.min_band_rows: 500`. **`quality.suppression_*` moved to
+      stage 2** — see below
 - [ ] `PLANNING.md` section 13 table cells updated to the measured value followed
       by `(measured YYYY-MM-DD)`; value, date and method in the commit message
 - [ ] `README.md` rewritten to match the shipped design — see below
@@ -200,6 +200,41 @@ machine is asleep, and a missed day is a vintage that cannot be reconstructed.
 The workflow does the archive and `dvc push` and **nothing else**. It is not
 `daily.yml`, which still arrives at stage 5 with scoring, triggers, retraining
 and publication. This is the one sanctioned piece of working ahead in stage 1.
+
+### Why `quality.suppression_*` moved to stage 2
+
+This is a **scoping correction, not a deferral of difficulty.** INV-8 still
+binds before any model trains, so stage 2 is the correct home — not stage 3.
+
+The stage-1 detector was a raw hour-over-hour delta rule: flag an hour where
+temperature rose by `suppression_temp_rise_c` while demand did not rise. On the
+real data it fires on **3-11% of all hours**, which is not load shedding — it
+is ordinary morning warming, when temperature climbs and demand has not yet
+picked up. Writing those numbers to config as a measurement would have poisoned
+INV-8 at its source: the invariant would be excluding a tenth of the training
+data for no reason, and the exclusion would look principled.
+
+The detector that is actually needed depends on a **fitted temperature
+response**, which does not exist until the feature pipeline does:
+
+```
+fit the temperature response, then flag SUSTAINED runs of large negative
+residuals at HIGH absolute temperature — demand far below what this
+temperature normally produces, for several consecutive hours, when it is hot
+```
+
+**Three sanity checks it must pass before any parameter is written anywhere.**
+There is no ground truth for load shedding to validate against, so the pattern
+is the evidence:
+
+| Check | Why |
+|---|---|
+| rate well under 1% of hours | 3-11% is a detector finding normal behaviour |
+| concentrated in **episodes**, not scattered | shedding is an event, not a texture |
+| **seasonal** — summer peaks — and **declining** across 2017-2026 | Indian supply improved over the period; a detector blind to that is finding noise |
+
+A detector that fires uniformly across seasons and years is finding noise,
+whatever its rate. The report carries the **pattern**, not just the number.
 
 ### The README rewrite
 
@@ -255,7 +290,7 @@ Nothing new. Stage 1 complete.
 | Path | Purpose | PLANNING ref |
 |---|---|---|
 | `src/ingest/calendar_in.py` | holidays, festivals, IST conversion | 5e |
-| `src/features/quality.py` | suppressed-demand detection (INV-8) | 5f P2 |
+| `src/features/quality.py` | suppressed-demand detection (INV-8), and the measurement of `quality.suppression_*` moved here from stage 1 | 5f P2, 13 |
 | `src/features/weather_feats.py` | cooling/heating degrees, per city then aggregate | 5e |
 | `src/features/forecast_noise.py` | training-time weather noise, applied to raw temperature **before** the degree transforms | 5d |
 | `src/features/build.py` | THE feature builder. Training and serving both call this | INV-9 |
@@ -274,6 +309,10 @@ baselines before metrics (MASE and RMSSE denominators are the baseline).
 - [ ] Contract test green: training and serving paths emit identical column
       names, order and dtypes
 - [ ] Every invariant INV-1..INV-9 has a test, and all are green
+- [ ] `quality.suppression_*` measured and written to config, with the detector
+      passing all three sanity checks — rate under 1%, concentrated in
+      episodes, seasonal and declining across 2017-2026. The **pattern** is
+      reported, not just the rate
 - [ ] `reports/baseline.md`: all four baselines scored across the twelve
       walk-forward folds
 - [ ] Every figure in it stratified by temperature band, hour, zone, day type
