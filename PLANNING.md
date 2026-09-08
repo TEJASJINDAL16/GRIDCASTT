@@ -572,12 +572,16 @@ fold's test period begins.
 
 *Rationale:* rows settle from estimated to measured after some lag, and INV-3
 forbids training on estimated rows, so the newest usable training row at any
-real issue time is `purge_gap_days` old. **The lag itself is unmeasured** — one
-observed row took two days (5d, 13) — and 10 is a deliberately conservative
-placeholder, not a finding. Never quote it as a measured settlement lag. A backtest without this gap
-trains on data that would not have existed at decision time — the error is
-invisible and it inflates every result. This is the single easiest way to
-produce a backtest number that cannot be reproduced in production.
+real issue time is `purge_gap_days` old.
+
+*On the value itself:* **the lag is unmeasured** — one observed row took two
+days (5d, 13) — and 10 is a deliberately conservative placeholder, not a
+finding. Never quote it as a measured settlement lag.
+
+*On why the gap exists at all:* a backtest without it trains on data that would
+not have existed at decision time. The error is invisible and it inflates every
+result. This is the single easiest way to produce a backtest number that cannot
+be reproduced in production.
 
 **RULE** Early stopping: hold out the last `splits.early_stopping_weeks` of each
 fold's training window as a validation set to select the iteration count, then
