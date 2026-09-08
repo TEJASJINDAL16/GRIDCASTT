@@ -331,6 +331,18 @@ overnight and do not silently exceed the budget.
       written to `drift.thresholds_backtest_sha`
 - [ ] MLflow runs logged with all five pins
 - [ ] `reports/model.md`: MASE and RMSSE per fold, with the baseline alongside
+- [ ] **Estimation-tier ablation** — train on the option-B span (measured plus
+      `MODE_BREAKDOWN`) and on the measured-only span, score both on the **same
+      measured folds**, and report the difference. The measured-only span
+      cannot support the full twelve-fold protocol, so run a reduced comparison
+      — fewer folds, shorter initial train — and say so explicitly in the
+      report
+
+*Why this deliverable exists:* it converts "training on `MODE_BREAKDOWN` data
+did not hurt" from an assumption into a measurement. `PLANNING.md` 13 records
+that decision as a judgement with evidence; this is the number that settles it.
+It is also the first question a sceptical reader asks, and having the answer
+ready is worth one extra backtest run.
 
 ### Exit gate
 

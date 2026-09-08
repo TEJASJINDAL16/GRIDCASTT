@@ -121,14 +121,58 @@ def _two_segment_rss_cold(temp: np.ndarray, y: np.ndarray, breakpoint: float) ->
     return float(residuals[0]) if residuals.size else float(((y - X @ coef) ** 2).sum())
 
 
-def find_breakpoint(temp: pd.Series, y: pd.Series, grid: np.ndarray,
-                    cold: bool = False) -> tuple[float, float]:
-    """Grid-search the breakpoint that minimises residual sum of squares."""
-    t, v = temp.to_numpy(float), y.to_numpy(float)
-    fn = _two_segment_rss_cold if cold else _two_segment_rss
-    rss = np.array([fn(t, v, b) for b in grid])
-    best = int(np.argmin(rss))
-    return float(grid[best]), float(rss[best])
+COOL_GRID = np.arange(14.0, 38.01, 0.5)
+HEAT_GRID = np.arange(2.0, 28.01, 0.5)
+
+
+def find_thresholds(temp: pd.Series, y: pd.Series) -> dict:
+    """Joint grid search for BOTH breakpoints at once.
+
+    Fitting one ramp alone is misspecified. Demand is U-shaped in temperature
+    (5e), so a lone cooling ramp tries to span the whole range and the search
+    runs to the edge of whatever grid it is given — which is exactly what
+    happened on the first attempt: every tier returned the grid boundary, in
+    both directions, and a boundary solution is not a measurement.
+
+    The model fitted here is the one the features actually use:
+
+        y ~ 1 + max(0, T - cooling) + max(0, heating - T)
+
+    with heating < cooling enforced, so the comfortable band between them where
+    both terms are zero exists (5c).
+
+    A result sitting on a grid edge is reported as NOT IDENTIFIED rather than as
+    a number.
+    """
+    t = temp.to_numpy(float)
+    v = y.to_numpy(float)
+    best = (np.inf, None, None, None)
+    for c in COOL_GRID:
+        for h in HEAT_GRID:
+            if h >= c:
+                continue
+            X = np.column_stack([np.ones_like(t),
+                                 np.maximum(0.0, t - c),
+                                 np.maximum(0.0, h - t)])
+            coef, res, rank, _ = np.linalg.lstsq(X, v, rcond=None)
+            if rank < 3:
+                continue
+            rss = float(res[0]) if res.size else float(((v - X @ coef) ** 2).sum())
+            if rss < best[0]:
+                best = (rss, c, h, coef)
+    rss, c, h, coef = best
+    if c is None:
+        return {"cooling_c": None, "heating_c": None, "identified": False,
+                "note": "no admissible fit"}
+    on_edge = (c in (COOL_GRID[0], COOL_GRID[-1])
+               or h in (HEAT_GRID[0], HEAT_GRID[-1]))
+    return {
+        "cooling_c": float(c), "heating_c": float(h),
+        "cooling_pct_per_c": round((np.exp(coef[1]) - 1) * 100, 3),
+        "heating_pct_per_c": round((np.exp(coef[2]) - 1) * 100, 3),
+        "identified": not on_edge,
+        "note": "NOT IDENTIFIED — solution on the grid edge" if on_edge else "",
+    }
 
 
 def adjust(df: pd.DataFrame) -> pd.Series:
@@ -143,35 +187,41 @@ def adjust(df: pd.DataFrame) -> pd.Series:
         ["zone", "hour_ist", "weekday_ist"])["log_demand"].transform("mean")
 
 
-def elbow_table(df: pd.DataFrame, cfg: dict, cold: bool = False) -> pd.DataFrame:
-    lo, hi = (5.0, 25.0) if cold else (18.0, 34.0)
-    grid = np.arange(lo, hi + 0.01, 0.25)
+def elbow_table(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """Both thresholds, per tier, naive and adjusted."""
     rows = []
     for tier in TIERS:
         sub = tier_subset(df, tier)
         if len(sub) < 1000:
-            rows.append({"tier": tier, "rows": len(sub), "naive_c": None,
-                         "adjusted_c": None, "note": "too few rows"})
+            rows.append({"tier": tier, "rows": len(sub), "note": "too few rows"})
             continue
-        naive, _ = find_breakpoint(sub["temperature_2m"], sub["log_demand"], grid, cold)
-        adj, _ = find_breakpoint(sub["temperature_2m"], adjust(sub), grid, cold)
-        rows.append({"tier": tier, "rows": len(sub), "naive_c": naive,
-                     "adjusted_c": adj, "note": ""})
+        naive = find_thresholds(sub["temperature_2m"], sub["log_demand"])
+        adj = find_thresholds(sub["temperature_2m"], adjust(sub))
+        rows.append({
+            "tier": tier, "rows": len(sub),
+            "naive_cool_c": naive["cooling_c"], "naive_heat_c": naive["heating_c"],
+            "adj_cool_c": adj["cooling_c"], "adj_heat_c": adj["heating_c"],
+            "adj_cool_pct_per_c": adj["cooling_pct_per_c"],
+            "adj_heat_pct_per_c": adj["heating_pct_per_c"],
+            "note": adj["note"] or naive["note"],
+        })
     return pd.DataFrame(rows)
 
 
-def per_zone_elbows(df: pd.DataFrame, tier: str, cold: bool = False) -> pd.DataFrame:
-    lo, hi = (5.0, 25.0) if cold else (18.0, 34.0)
-    grid = np.arange(lo, hi + 0.01, 0.25)
+def per_zone_elbows(df: pd.DataFrame, tier: str) -> pd.DataFrame:
     sub = tier_subset(df, tier)
     rows = []
-    for zone, g in sub.groupby("zone"):
+    for zone, g in sub.groupby("zone", observed=True):
         if len(g) < 1000:
-            rows.append({"zone": zone, "rows": len(g), "elbow_c": None})
+            rows.append({"zone": zone, "rows": len(g), "note": "too few rows"})
             continue
         y = g["log_demand"] - g.groupby(["hour_ist", "weekday_ist"])["log_demand"].transform("mean")
-        bp, _ = find_breakpoint(g["temperature_2m"], y, grid, cold)
-        rows.append({"zone": zone, "rows": len(g), "elbow_c": bp})
+        r = find_thresholds(g["temperature_2m"], y)
+        rows.append({"zone": zone, "rows": len(g),
+                     "cooling_c": r["cooling_c"], "heating_c": r["heating_c"],
+                     "cooling_pct_per_c": r["cooling_pct_per_c"],
+                     "heating_pct_per_c": r["heating_pct_per_c"],
+                     "note": r["note"]})
     return pd.DataFrame(rows)
 
 
@@ -308,6 +358,150 @@ def holiday_effect(df: pd.DataFrame, tier: str) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------
+# The discontinuity test — the gate on the option-B estimation-tier decision
+# --------------------------------------------------------------------------
+
+# The method switches here for four of five zones. IN-EA switched earlier, so
+# it gets its own boundary; anything assuming one project-wide date is wrong
+# for it (PLANNING 11).
+SWITCH_DATES = {
+    "IN-NO": "2024-11-05", "IN-WE": "2024-11-05",
+    "IN-SO": "2024-11-05", "IN-NE": "2024-11-05",
+    "IN-EA": "2024-01-01",  # IN-EA switched ten months before the others
+}
+
+
+def detect_switch(g: pd.DataFrame) -> pd.Timestamp | None:
+    """First timestamp from which the zone is predominantly measured."""
+    daily = (g.assign(m=(g["tier"] == "measured").astype(float))
+              .groupby("date_ist")["m"].mean())
+    settled = daily[daily > 0.5]
+    return pd.Timestamp(settled.index.min()) if len(settled) else None
+
+
+def _step_at(w: pd.DataFrame, cut: pd.Timestamp) -> tuple[float, float, float]:
+    """Fit the step model at `cut`. Returns (step_log, volatility_ratio, shape_gap)."""
+    w = w.sort_values("datetime_utc")
+    after = (w["datetime_utc"] >= cut).astype(float)
+    temp = w["temperature_2m"].to_numpy(float)
+    cols = [np.ones(len(w)),
+            np.maximum(0.0, temp - 24.0),
+            np.maximum(0.0, 15.0 - temp),
+            (w["datetime_utc"] - cut).dt.total_seconds().to_numpy() / 86400.0,
+            after.to_numpy()]
+    for h in range(1, 24):
+        cols.append((w["hour_ist"] == h).astype(float).to_numpy())
+    for d in range(1, 7):
+        cols.append((w["weekday_ist"] == d).astype(float).to_numpy())
+    X = np.column_stack(cols)
+    y = w["log_demand"].to_numpy(float)
+    coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+
+    b, a = w[after == 0], w[after == 1]
+    if len(b) < 48 or len(a) < 48:
+        return float("nan"), float("nan"), float("nan")
+    vol_b = b["log_demand"].diff().abs().mean()
+    vol_a = a["log_demand"].diff().abs().mean()
+
+    def profile(x):
+        prof = x.groupby("hour_ist")["demand_mw"].mean()
+        return prof / prof.mean()
+    shape = float((profile(a) - profile(b)).abs().max())
+    return float(coef[4]), float(vol_a / vol_b) if vol_b else float("nan"), shape
+
+
+def discontinuity_test(df: pd.DataFrame, window_days: int = 60,
+                       placebo_step_days: int = 30,
+                       placebo_span_days: int = 420) -> pd.DataFrame:
+    """Is there a step in the series where the estimation method changes?
+
+    PLANNING 13: the case for training on MODE_BREAKDOWN rests on that method
+    naming the fuel-mix breakdown rather than powerConsumptionTotal. That is an
+    inference about someone else's pipeline. Consumption is normally derived
+    from production plus net imports, which come from the breakdown — so if the
+    total is reconstructed rather than metered, we would be training on derived
+    numbers without knowing.
+
+    The switch has a date, and the meter does not change on it. So a step dummy
+    at the boundary, with temperature and calendar controls, measures exactly
+    the thing in question. November is not October, hence the controls.
+
+    Three quantities, because a pipeline change can move any of them:
+      level      step coefficient on log(demand), as a percentage
+      variance   ratio of hour-to-hour absolute change, after / before
+      shape      max absolute difference in the mean 24-hour IST profile,
+                 each side normalised by its own daily mean
+    """
+    rows = []
+    for zone, g in df.groupby("zone", observed=True):
+        cut = SWITCH_DATES.get(zone)
+        cut = pd.Timestamp(cut, tz="UTC") if cut else detect_switch(g)
+        if cut is None:
+            rows.append({"zone": zone, "note": "no switch detected"})
+            continue
+        if cut.tz is None:
+            cut = cut.tz_localize("UTC")
+
+        lo = cut - pd.Timedelta(days=window_days)
+        hi = cut + pd.Timedelta(days=window_days)
+        w = g[(g["datetime_utc"] >= lo) & (g["datetime_utc"] < hi)].copy()
+        w = w.sort_values("datetime_utc")
+        if len(w) < 24 * 30:
+            rows.append({"zone": zone, "note": f"only {len(w)} rows in window"})
+            continue
+
+        step, vol, shape = _step_at(w, cut)
+
+        # PLACEBO CALIBRATION. A regression standard error assumes independent
+        # residuals; hourly demand is nothing of the sort, and a small zone
+        # wanders by tens of percent from month to month with no pipeline
+        # change at all. So "is this step large?" is answered against what this
+        # same series produces at boundaries where nothing happened, not
+        # against a t-statistic that would call almost anything significant.
+        placebos = []
+        offsets = [d for d in range(-placebo_span_days, placebo_span_days + 1,
+                                    placebo_step_days)
+                   if abs(d) >= 2 * window_days]
+        for off in offsets:
+            fake = cut + pd.Timedelta(days=off)
+            fw = g[(g["datetime_utc"] >= fake - pd.Timedelta(days=window_days))
+                   & (g["datetime_utc"] < fake + pd.Timedelta(days=window_days))]
+            if len(fw) < 24 * 60:
+                continue
+            # A placebo window must not straddle the real switch, or it is not
+            # a placebo.
+            if (fw["datetime_utc"].min() < cut < fw["datetime_utc"].max()):
+                continue
+            ps, pv, psh = _step_at(fw, fake)
+            if np.isfinite(ps):
+                placebos.append((abs(ps), pv, psh))
+        if len(placebos) < 5:
+            rows.append({"zone": zone, "switch": cut.date().isoformat(),
+                         "note": f"only {len(placebos)} placebo windows"})
+            continue
+
+        p_step = np.array([x[0] for x in placebos])
+        p_shape = np.array([x[2] for x in placebos])
+        step_p90 = float(np.quantile(p_step, 0.90))
+        shape_p90 = float(np.quantile(p_shape, 0.90))
+        exceeds = abs(step) > step_p90 or shape > shape_p90
+
+        rows.append({
+            "zone": zone,
+            "switch": cut.date().isoformat(),
+            "rows": len(w),
+            "level_step_pct": round((np.exp(step) - 1) * 100, 2),
+            "placebo_p90_pct": round((np.exp(step_p90) - 1) * 100, 2),
+            "n_placebo": len(placebos),
+            "vol_ratio": round(vol, 2),
+            "shape_gap": round(shape, 3),
+            "placebo_shape_p90": round(shape_p90, 3),
+            "exceeds_placebo": bool(exceeds),
+        })
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------
 # Plots
 #
 # Drawn here rather than through src/viz/plots.py. That module is the single
@@ -435,6 +629,32 @@ def make_plots(df: pd.DataFrame, cfg: dict, tier: str, out_dir: pathlib.Path) ->
 
 # --------------------------------------------------------------------------
 
+def volatility_table_df(df: pd.DataFrame, window_days: int = 90) -> pd.DataFrame:
+    """Hour-to-hour variability either side of each zone's own switch date."""
+    rows = []
+    for zone, cut in SWITCH_DATES.items():
+        c = pd.Timestamp(cut, tz="UTC")
+        g = df[df["zone"] == zone].sort_values("datetime_utc")
+        b = g[(g["datetime_utc"] >= c - pd.Timedelta(days=window_days))
+              & (g["datetime_utc"] < c)]
+        a = g[(g["datetime_utc"] >= c) & (g["datetime_utc"] < c + pd.Timedelta(days=window_days))]
+        if b.empty or a.empty:
+            continue
+        vb = b["log_demand"].diff().abs().mean()
+        va = a["log_demand"].diff().abs().mean()
+        pb = (b["demand_mw"].diff().abs() / b["demand_mw"]).dropna() * 100
+        pa = (a["demand_mw"].diff().abs() / a["demand_mw"]).dropna() * 100
+        rows.append({
+            "zone": zone, "switch": cut,
+            "before_mean_abs_dlog": round(float(vb), 5),
+            "after_mean_abs_dlog": round(float(va), 5),
+            "ratio": round(float(va / vb), 2),
+            "before_p95_hourly_pct": round(float(pb.quantile(0.95)), 1),
+            "after_p95_hourly_pct": round(float(pa.quantile(0.95)), 1),
+        })
+    return pd.DataFrame(rows)
+
+
 def md_table(df: pd.DataFrame) -> str:
     return df.to_markdown(index=False)
 
@@ -458,10 +678,9 @@ def main() -> None:
 
     tier_counts = (df.groupby(["tier", "zone"], observed=True).size()
                      .unstack("zone", fill_value=0))
-    cool = elbow_table(df, cfg, cold=False)
-    heat = elbow_table(df, cfg, cold=True)
-    zone_cool = per_zone_elbows(df, tier, cold=False)
-    zone_heat = per_zone_elbows(df, tier, cold=True)
+    thresholds = elbow_table(df, cfg)
+    zone_thresholds = per_zone_elbows(df, tier)
+    discontinuity = discontinuity_test(df)
     bands = band_occupancy(df, cfg, tier)
     bands_zone = band_occupancy_by_zone(df, cfg, tier)
     supp, _ = suppression_candidates(df, cfg, tier)
@@ -470,13 +689,24 @@ def main() -> None:
     plots = make_plots(df, cfg, tier, figures)
 
     spread = None
-    if zone_cool["elbow_c"].notna().any():
-        spread = float(zone_cool["elbow_c"].max() - zone_cool["elbow_c"].min())
+    if "cooling_c" in zone_thresholds and zone_thresholds["cooling_c"].notna().any():
+        spread = float(zone_thresholds["cooling_c"].max()
+                       - zone_thresholds["cooling_c"].min())
+    flagged = discontinuity.get("exceeds_placebo")
+    if flagged is not None:
+        log.info("discontinuity: %d of %d zones exceed their placebo band",
+                 int(flagged.sum()), len(flagged))
 
     origin = get(cfg, "demand.backfill_start")
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     cfg_cool = get(cfg, "features.cooling_threshold_c")
     cfg_heat = get(cfg, "features.heating_threshold_c")
+
+    spread_text = f"{spread:.2f} C" if spread is not None else "not identified"
+    discontinuity_table = md_table(discontinuity)
+    volatility_table = md_table(volatility_table_df(df))
+    threshold_table = md_table(thresholds)
+    zone_threshold_table = md_table(zone_thresholds)
 
     doc = f"""# Step-0 measurements
 
@@ -514,39 +744,70 @@ measurement below is reported per tier rather than collapsed into one number.
 
 {md_table(tier_counts.reset_index())}
 
-## The elbow — `features.cooling_threshold_c`
+## The estimation-method discontinuity test
 
-Method, fixed by ruling: two-segment fit on `log(demand)`, breakpoint by
-RSS-minimising grid search at 0.25 C resolution, pooled across zones. Run both
-ways — naively, and with zone, hour-of-day and weekday means removed first.
+**This is the gate on the option-B tier decision (PLANNING 13).** The case for
+training on `MODE_BREAKDOWN` rows rests on that method naming the fuel-mix
+breakdown rather than `powerConsumptionTotal`. Consumption is normally derived
+from production plus net imports — which come from the breakdown — so if the
+total is reconstructed rather than metered, option B trains on ~45 months of
+derived numbers.
 
-A raw scatter conflates the temperature response with the daily cycle: demand
-is high at 20:00 and low at 04:00 for reasons unrelated to temperature, and
-temperature is itself correlated with hour. The naive number is reported so the
-size of that artefact is visible, not because it is the answer.
+The switch has a date and the meter does not change on it, so a step model at
+the boundary with temperature and calendar controls isolates the pipeline
+change. Significance is calibrated against **placebo boundaries** — the same
+model fitted at dates where nothing happened — because a regression standard
+error assumes independent residuals and hourly demand is nothing of the sort.
 
-Config currently holds **{cfg_cool} C**.
+{discontinuity_table}
 
-{md_table(cool)}
+**Zones do not switch on the same date.** IN-EA switches 2024-01-01, the other
+four on 2024-11-05. That matters: nothing about Indian electricity demand
+changes on two different dates for different regions, so anything that tracks
+each zone's own switch date is a property of the pipeline, not of the world.
 
-### Per-zone elbows — tier `{tier}`
+### Hour-to-hour variability, 90 days either side
 
-{md_table(zone_cool)}
+{volatility_table}
 
-Spread across zones: **{f"{spread:.2f} C" if spread is not None else "not computed"}**.
-Pooled scalar is confirmed for phase 1 and the config schema does not change;
-a spread beyond about 2 C is phase 2 evidence for a per-zone map, not a phase 1
-change.
+## The thresholds — `features.cooling_threshold_c` and `heating_threshold_c`
 
-## The cold-side inflection — `features.heating_threshold_c`
+Method, per ruling: RSS-minimising grid search on `log(demand)`, pooled, run
+both naively and with zone, hour-of-day and weekday means removed first.
 
-Same method, mirrored: `max(0, breakpoint - T)`. Config holds **{cfg_heat} C**.
+**Corrected from the first attempt.** Fitting one ramp alone is misspecified:
+demand is not monotone in temperature, so a lone cooling ramp tries to span the
+whole range and the search runs to whatever grid edge it is given. The first
+run returned the grid boundary for every tier in both directions. A boundary
+solution is not a measurement, and it is now reported as **NOT IDENTIFIED**
+rather than as a number. The model fitted is the one the features actually use:
 
-{md_table(heat)}
+```
+y ~ 1 + max(0, T - cooling) + max(0, heating - T),    heating < cooling
+```
 
-### Per-zone, tier `{tier}`
+Config currently holds cooling **{cfg_cool} C**, heating **{cfg_heat} C**.
 
-{md_table(zone_heat)}
+{threshold_table}
+
+### Per-zone — tier `{tier}`
+
+{zone_threshold_table}
+
+Cooling-threshold spread across zones: **{spread_text}**.
+
+### The cold side does not behave like a heating load
+
+The heating coefficient comes out **negative in every tier** — colder means
+*less* demand, not more, across the observed range. That is physically
+plausible for most of India, where electric heating is rare, and 5e already
+says `heating_degrees` is kept as a structural requirement of the architecture
+rather than because heating load is large.
+
+It has a consequence worth raising before stage 2: 5c requires a **monotone
+increasing** constraint on `heating_degrees` in the LightGBM stage. If the
+relationship runs the other way in this data, that constraint would force the
+model against the measured direction. Flagging rather than acting on it.
 
 ## Band occupancy — `evaluate.temperature_bands_c`
 

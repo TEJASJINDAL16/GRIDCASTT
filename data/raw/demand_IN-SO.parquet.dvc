@@ -1,0 +1,5 @@
+outs:
+- md5: 6c7abc34d41059122db2630c8603f089
+  size: 3271381
+  hash: md5
+  path: demand_IN-SO.parquet

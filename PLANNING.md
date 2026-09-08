@@ -521,6 +521,17 @@ month.
 *Expanding rather than sliding, consistent with the training-window rule in
 section 7.*
 
+**RULE** The walk-forward folds straddle the `MODE_BREAKDOWN`-to-measured
+transition (11). This is a known change in the **data-generating process inside
+the test period**, and it must be stated as a caveat wherever fold results are
+reported — the backtest report, the model card and the dashboard.
+
+*Rationale:* the training span begins in the `MODE_BREAKDOWN` era and the most
+recent folds and the whole holdout are measured rows, so a fold-to-fold change
+in error can be a change in the data rather than a change in the model. Not
+stating it would leave the single most likely alternative explanation for any
+trend in the fold results unmentioned.
+
 **RULE** Within a test fold, train once at the fold boundary and issue daily
 forecasts across the month without retraining.
 
@@ -663,6 +674,20 @@ The **Stage** column says which half of the hybrid consumes each feature —
 | `cooling_degrees` | **linear** + tree | `max(0, T - cooling_threshold_c)` | see below — kept for three reasons, none of which is helping the tree |
 | `heating_degrees` | **linear** + tree | `max(0, heating_threshold_c - T)` | the other half of the temperature decomposition — see below |
 | `trend` | **linear** + tree | days since `demand.backfill_start`, fixed origin | year-on-year growth; without it the tree pins to the final training period's level and runs low, by roughly the growth rate per year of staleness (5c) |
+
+**RULE** Once training has begun, `demand.backfill_start` **never moves**.
+Changing it invalidates every derived threshold and the champion itself, and
+both must be rebuilt from scratch.
+
+*Rationale:* `trend` is days since that date, so moving the origin shifts every
+value by a constant. A constant shift is harmless to the Ridge stage, which
+absorbs it in the intercept — but every LightGBM split on `trend` is an
+**absolute number**. A tree that learned to split at `trend > 1460` keeps
+splitting there while the data underneath it has moved four years, and nothing
+errors. The drift thresholds have the same problem: they were derived from a
+backtest whose feature matrix used the old origin. This is a silent-failure
+mode of exactly the kind section 9 exists for, and the only safe response is to
+treat an origin change as a full rebuild.
 | `zone` | tree | data column, native categorical | five pooled series; without it the model predicts an average of five and matches none |
 
 **RULE** Features marked `linear + tree` are passed to **both** stages. The
@@ -1766,9 +1791,21 @@ functions in `src/ingest/weather.py` and must remain so.
 walk-forward only: train on the past, test on what came next. A shuffled split
 trains on the future to predict the past.
 
-**INV-3 — Never train on estimated rows.** Rows with `is_estimated == True`
-carry a `TIME_SLICER_AVERAGE` fill-in, not a measurement. Training on them
-teaches the model to reproduce an average.
+**INV-3 — Never train on rows whose `estimation_method` is not in
+`quality.trainable_estimation_methods`.** Rows with no estimation — measured —
+are always trainable. **The `is_estimated` flag alone is not sufficient**: the
+source uses three estimation methods and they are not equivalent (11). One,
+`TIME_SLICER_AVERAGE`, is the fill-in this invariant was written for, and
+training on it teaches the model to reproduce an average. Another,
+`GENERAL_PURPOSE_ZONE_MODEL`, is a modelled series measured to be roughly four
+times too smooth at the evening peak — training on it teaches under-dispersion,
+which is invisible in a MAPE headline and fatal to 5f's extremes and to INV-8.
+
+*This invariant originally asserted that `is_estimated == True` meant a
+`TIME_SLICER_AVERAGE` fill-in. That was written from a single observation and
+stated as fact; it is false for two of the three methods. Keeping the allowlist
+in config rather than in code means the decision is versioned and reviewable
+rather than buried.*
 
 **INV-4 — Score only against measured rows.** Rows are revised after
 publication. A row scored while still estimated produces error that is not
@@ -1802,13 +1839,12 @@ from, with nothing erroring. Enforced by a contract test in CI (see 14).
 intent, not by oversight.
 
 - Timeline and dates (the milestone *content* is fixed in 12 and 14)
-- **Which estimated rows, if any, are trainable.** INV-3 forbids training on
-  `is_estimated == True` on the stated ground that such rows carry a
-  `TIME_SLICER_AVERAGE` fill-in. Section 11 records that this is true of one of
-  three observed methods. Applying INV-3 literally leaves 22 months of trainable
-  history against a 60-month split budget (5c), so the walk-forward as specified
-  cannot run. **Not decided.** Until it is, no model trains and no step-0
-  threshold is written to config.
+- **Confirmation of the estimation-tier decision.** DECIDED provisionally
+  (13): trainable methods are measured plus `MODE_BREAKDOWN`. It is provisional
+  on one test — the 2024-11-05 discontinuity check in 13. If that test finds a
+  material discontinuity, the decision is void, the trainable span becomes
+  measured-only, and **5c's split budget has to be redesigned around it. That
+  redesign is the repository owner's decision, not an implementer's.**
 
 ---
 
@@ -1849,12 +1885,27 @@ key lapsing. Only the live daily update depends on the API.*
 Recorded here as observation. **What follows for INV-3 is not yet decided** —
 see 10.
 
-| `estimationMethod` | Period, all five zones | What it appears to be |
-|---|---|---|
-| `GENERAL_PURPOSE_ZONE_MODEL` | 2017-01 to ~2020 | a modelled series |
-| `MODE_BREAKDOWN` | ~2021 to 2024-11 | the fuel-mix breakdown is estimated |
-| `TIME_SLICER_AVERAGE` | the 2024-11 boundary, and current unsettled rows | the fill-in INV-3 describes |
-| *(none)* — `isEstimated == False` | from 2024-11-05 (IN-EA from ~2024-06) | measured |
+| `estimationMethod` | Period | What it appears to be | Trainable |
+|---|---|---|---|
+| `GENERAL_PURPOSE_ZONE_MODEL` | 2017-01 to ~2020, all five zones | a modelled series, ~4x too smooth at the evening peak | no |
+| `MODE_BREAKDOWN` | ~2021 to the measured switch | the fuel-mix breakdown is estimated; the consumption total is not a fill-in | yes |
+| `TIME_SLICER_AVERAGE` | the switch boundary, and current unsettled rows | the fill-in INV-3 was written for | no |
+| *(none)* — `isEstimated == False` | from the switch | measured | yes |
+
+Row counts by method and zone, over 2017-01-01 to 2026-09-01 (measured
+2026-09-08):
+
+| Method | IN-EA | IN-NE | IN-NO | IN-SO | IN-WE |
+|---|---|---|---|---|---|
+| `GENERAL_PURPOSE_ZONE_MODEL` | 35,035 | 35,064 | 26,280 | 26,280 | 26,280 |
+| `MODE_BREAKDOWN` | 26,281 | 33,680 | 42,480 | 42,480 | 42,480 |
+| `TIME_SLICER_AVERAGE` | 308 | 289 | 287 | 287 | 287 |
+| measured | 23,091 | 15,692 | 15,697 | 15,697 | 15,697 |
+
+**The switch to measured is not simultaneous across zones.** IN-EA goes
+measured from around 2024-06; the other four switch on **2024-11-05**, with a
+short `TIME_SLICER_AVERAGE` band either side. Anything that assumes one
+project-wide settlement date is wrong for IN-EA.
 
 A `TIME_SLICER_AVERAGE` fill-in repeats: the same (hour, weekday) takes an
 identical value. Tested on 18-day samples of IN-NO, none of the tiers do.
@@ -2106,6 +2157,59 @@ from the first commit onward. **Measure it before writing `features/build.py`.**
 six days of usable training data in every fold; if they take fourteen, every
 backtest number is optimistic and cannot be reproduced in production. Neither
 error announces itself.
+
+### Recorded judgement — which estimation tiers are trainable
+
+Decided 2026-09-08. Recorded here because the reasoning is more valuable than
+the conclusion, and because the conclusion looks arbitrary without it.
+
+**The problem.** INV-3 as originally written forbade training on
+`is_estimated == True`, on the stated ground that such rows carry a
+`TIME_SLICER_AVERAGE` fill-in. That premise came from a single observation and
+was asserted as fact. Section 11 records that the source uses three estimation
+methods; only one is that fill-in. Applying the invariant literally leaves 22
+months of trainable history against the 60-month split budget of 5c — 12 tuning
++ 24 minimum initial train + 12 fold months + 12 holdout — so the specified
+walk-forward cannot run at all.
+
+**The options, and why B.**
+
+| | Trainable from | Span | Verdict |
+|---|---|---|---|
+| A — measured only | 2024-11 | 22 mo | Not available. Cannot run the 5c protocol |
+| **B — measured + `MODE_BREAKDOWN`** | ~2021-01 | ~68 mo | **Chosen** |
+| C — everything but `TIME_SLICER_AVERAGE` | 2017-01 | ~116 mo | Rejected |
+
+C is not a close call. Recency weighting at a 365-day half-life gives 2017 data
+roughly 0.2% of today's weight, so C buys almost no effective training signal
+while importing data measured to be about four times too smooth at the evening
+peak — standard deviation across days at 18:00 IST of 1,610 MW in 2017 against
+6,780 MW in 2025. Under-dispersed data is worst exactly where this project
+claims to be careful: 5f's extremes and INV-8's suppression detection both
+depend on seeing real variance. C trades the project's best argument for
+nothing.
+
+**The caveat on that reasoning.** `train.recency_half_life_days` is tuned by
+Optuna at step 10. If it comes out much longer than 365 days the
+`MODE_BREAKDOWN` era gains weight and this decision becomes more load-bearing.
+Flag it if that happens.
+
+**Why provisional.** The case for B rests on `MODE_BREAKDOWN` naming the
+fuel-mix breakdown rather than `powerConsumptionTotal`. That is an inference
+about someone else's pipeline, and consumption is normally derived from
+production plus net imports — which come from the breakdown. If the total is
+reconstructed rather than metered, B trains on 45 months of derived numbers.
+
+It is testable, because the switch has a date: at 2024-11-05 the method changes
+and the meter does not. Compare 60 days either side for a discontinuity in
+level, in hour-to-hour variance and in average daily shape, controlling for
+temperature and calendar since November is not October. No material
+discontinuity confirms B. A material discontinuity voids it — and then 5c must
+be redesigned around the measured-only span, which is the repository owner's
+decision.
+
+The test and its result are recorded in `reports/step0_measurements.md` either
+way. It is the evidence for the largest judgement call in the project.
 
 **RULE** Any figure quoted in the README, dashboard or model card that depends
 on an unreplaced placeholder must say so.

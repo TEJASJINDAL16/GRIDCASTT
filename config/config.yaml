@@ -67,7 +67,17 @@ features:
 
 # --- Data quality ---
 quality:
-  train_on_estimated: false        # INV-3
+  # INV-3. The bare isEstimated flag is NOT sufficient: the source uses three
+  # estimation methods and they are not equivalent (see PLANNING 11).
+  #   MEASURED                    sentinel for isEstimated == false
+  #   MODE_BREAKDOWN              the fuel-mix breakdown is estimated; the
+  #                               consumption total is not a fill-in
+  #   GENERAL_PURPOSE_ZONE_MODEL  a modelled series, measured to be ~4x too
+  #                               smooth at the evening peak - EXCLUDED
+  #   TIME_SLICER_AVERAGE         the actual fill-in INV-3 exists for - EXCLUDED
+  # Provisional pending the 2024-11-05 discontinuity test (13).
+  trainable_estimation_methods: [MEASURED, MODE_BREAKDOWN]
+  train_on_estimated: false        # INV-3 - superseded by the allowlist above
   score_on_estimated: false        # INV-4
   # Suppressed demand (INV-8): flag hours where demand is flat or falling
   # while temperature rises. Values provisional until measured.
