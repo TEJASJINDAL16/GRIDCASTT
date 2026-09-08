@@ -338,6 +338,11 @@ overnight and do not silently exceed the budget.
       — fewer folds, shorter initial train — and say so explicitly in the
       report
 
+**This is a GATE, not merely a deliverable.** The final model does not ship
+until that number exists. The stage-1 relationship test *predicts* that the
+older era is noisier rather than different; this one *measures* whether that
+prediction held.
+
 *Why this deliverable exists:* it converts "training on `MODE_BREAKDOWN` data
 did not hurt" from an assumption into a measurement. `PLANNING.md` 13 records
 that decision as a judgement with evidence; this is the number that settles it.
@@ -348,7 +353,8 @@ ready is worth one extra backtest run.
 
 MASE below 1 across folds. No regression against the baseline on any veto
 metric. Ablation run and reported. The backtest of record exists and its sha is
-in config.
+in config. **The estimation-tier ablation number exists** — the model does not
+ship without it.
 
 ### Do not do in this stage
 

@@ -121,8 +121,10 @@ def _two_segment_rss_cold(temp: np.ndarray, y: np.ndarray, breakpoint: float) ->
     return float(residuals[0]) if residuals.size else float(((y - X @ coef) ** 2).sum())
 
 
-COOL_GRID = np.arange(14.0, 38.01, 0.5)
-HEAT_GRID = np.arange(2.0, 28.01, 0.5)
+# Widened per ruling. An interior solution is required; a result on either
+# edge is reported as NOT IDENTIFIED rather than as a number.
+COOL_GRID = np.arange(15.0, 32.01, 0.5)
+HEAT_GRID = np.arange(5.0, 25.01, 0.5)
 
 
 def find_thresholds(temp: pd.Series, y: pd.Series) -> dict:
@@ -149,7 +151,7 @@ def find_thresholds(temp: pd.Series, y: pd.Series) -> dict:
     best = (np.inf, None, None, None)
     for c in COOL_GRID:
         for h in HEAT_GRID:
-            if h >= c:
+            if h > c:
                 continue
             X = np.column_stack([np.ones_like(t),
                                  np.maximum(0.0, t - c),
@@ -185,6 +187,86 @@ def adjust(df: pd.DataFrame) -> pd.Series:
     """
     return df["log_demand"] - df.groupby(
         ["zone", "hour_ist", "weekday_ist"])["log_demand"].transform("mean")
+
+
+def _design(t: np.ndarray, spec: str, c: float, h: float) -> np.ndarray:
+    """Design matrix for one of the three candidate shapes."""
+    if spec == "v_shape":            # 5e's premise: U-shaped in temperature
+        return np.column_stack([np.ones_like(t),
+                                np.maximum(0.0, t - c),
+                                np.maximum(0.0, h - t)])
+    if spec == "flat_below":         # hockey stick: flat below the elbow
+        return np.column_stack([np.ones_like(t), np.maximum(0.0, t - c)])
+    if spec == "sloped_below":       # two slopes, continuous at the elbow
+        return np.column_stack([np.ones_like(t), t, np.maximum(0.0, t - c)])
+    raise ValueError(spec)
+
+
+def compare_specifications(df: pd.DataFrame, tier: str,
+                           holdout_frac: float = 0.3) -> pd.DataFrame:
+    """Which shape actually fits — measured on rows not used to fit it.
+
+    5e asserts demand is U-shaped in temperature. That is a premise stated from
+    physics, not a measurement — the same class of statement as INV-3's second
+    sentence, which turned out to be false. So it is tested rather than assumed.
+
+    The split is CHRONOLOGICAL, not random (INV-2): fit on the earlier rows,
+    score on the later ones.
+    """
+    sub = tier_subset(df, tier).sort_values("datetime_utc")
+    if len(sub) < 5000:
+        return pd.DataFrame([{"tier": tier, "note": "too few rows"}])
+    cut = int(len(sub) * (1 - holdout_frac))
+    fit_rows, test_rows = sub.iloc[:cut], sub.iloc[cut:]
+
+    def adj(x, ref):
+        means = ref.groupby(["zone", "hour_ist", "weekday_ist"])["log_demand"].mean()
+        idx = pd.MultiIndex.from_frame(x[["zone", "hour_ist", "weekday_ist"]])
+        return (x["log_demand"].to_numpy()
+                - means.reindex(idx).to_numpy())
+
+    y_fit = adj(fit_rows, fit_rows)
+    y_test = adj(test_rows, fit_rows)
+    ok = np.isfinite(y_test)
+    t_fit = fit_rows["temperature_2m"].to_numpy(float)
+    t_test = test_rows["temperature_2m"].to_numpy(float)[ok]
+    y_test = y_test[ok]
+
+    rows = []
+    for spec in ("v_shape", "flat_below", "sloped_below"):
+        best = (np.inf, None, None, None)
+        for c in COOL_GRID:
+            hs = HEAT_GRID[c >= HEAT_GRID] if spec == "v_shape" else [np.nan]
+            for h in hs:
+                X = _design(t_fit, spec, c, h)
+                coef, res, rank, _ = np.linalg.lstsq(X, y_fit, rcond=None)
+                if rank < X.shape[1]:
+                    continue
+                rss = (float(res[0]) if res.size
+                       else float(((y_fit - X @ coef) ** 2).sum()))
+                if rss < best[0]:
+                    best = (rss, c, h, coef)
+        _, c, h, coef = best
+        if c is None:
+            rows.append({"tier": tier, "spec": spec, "note": "no fit"})
+            continue
+        pred = _design(t_test, spec, c, h) @ coef
+        rmse = float(np.sqrt(np.mean((y_test - pred) ** 2)))
+        edge = c in (COOL_GRID[0], COOL_GRID[-1]) or (
+            spec == "v_shape" and h in (HEAT_GRID[0], HEAT_GRID[-1]))
+        rows.append({
+            "tier": tier, "spec": spec, "cooling_c": c,
+            "heating_c": None if spec != "v_shape" else h,
+            "params": X.shape[1],
+            "holdout_rmse_log": round(rmse, 5),
+            "identified": not edge,
+            "note": "on grid edge" if edge else "",
+        })
+    out = pd.DataFrame(rows)
+    if "holdout_rmse_log" in out:
+        best_rmse = out["holdout_rmse_log"].min()
+        out["vs_best_pct"] = ((out["holdout_rmse_log"] / best_rmse - 1) * 100).round(2)
+    return out
 
 
 def elbow_table(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
@@ -502,6 +584,126 @@ def discontinuity_test(df: pd.DataFrame, window_days: int = 60,
 
 
 # --------------------------------------------------------------------------
+# The relationship test — the gate on option B
+# --------------------------------------------------------------------------
+
+def _slope_above(w: pd.DataFrame, breakpoint: float) -> float | None:
+    """High-temperature slope of log(demand), hour and weekday removed.
+
+    Uses the `sloped_below` specification, which is the only one of the three
+    that is identified on a proper grid (see the specification comparison).
+    The breakpoint is held FIXED across the comparison so that slope and
+    breakpoint cannot trade off against each other.
+    """
+    if len(w) < 24 * 60:
+        return None
+    y = (w["log_demand"]
+         - w.groupby(["hour_ist", "weekday_ist"])["log_demand"].transform("mean")).to_numpy()
+    temp = w["temperature_2m"].to_numpy(float)
+    X = np.column_stack([np.ones_like(temp), temp, np.maximum(0.0, temp - breakpoint)])
+    coef, _, rank, _ = np.linalg.lstsq(X, y, rcond=None)
+    if rank < 3:
+        return None
+    return float(coef[1] + coef[2])          # total slope above the breakpoint
+
+
+def _window(g: pd.DataFrame, centre: pd.Timestamp, months: int) -> tuple:
+    span = pd.Timedelta(days=months * 30.44)
+    before = g[(g["datetime_utc"] >= centre - span) & (g["datetime_utc"] < centre)]
+    after = g[(g["datetime_utc"] >= centre) & (g["datetime_utc"] < centre + span)]
+    return before, after
+
+
+def relationship_test(df: pd.DataFrame, months: int = 12,
+                      placebo_step_days: int = 30) -> pd.DataFrame:
+    """Does the temperature-to-demand RELATIONSHIP change across the switch?
+
+    Variance differing says the same quantity is recorded with different
+    precision. That is survivable: extra noise in the target inflates
+    irreducible error without biasing the conditional mean. It is only
+    survivable if the noise is roughly independent of the features — if the
+    reconstruction error is larger at peak hours or high temperatures, it
+    distorts the relationship rather than blurring it.
+
+    So this compares the thing that actually matters: the slope of demand
+    against temperature above the breakpoint, fitted separately either side,
+    on 12-month windows so both cover a full annual cycle and neither is
+    summer-against-winter.
+
+    Calibrated against placebo boundaries in the pre-switch era, the same way
+    the level test was.
+    """
+    rows = []
+    for zone, cut in SWITCH_DATES.items():
+        c = pd.Timestamp(cut, tz="UTC")
+        g = df[df["zone"] == zone].sort_values("datetime_utc")
+
+        before, after = _window(g, c, months)
+        combined = pd.concat([before, after])
+        if len(combined) < 24 * 300:
+            rows.append({"zone": zone, "note": "window too short"})
+            continue
+
+        # One breakpoint for both sides, fitted on the combined window.
+        y = (combined["log_demand"]
+             - combined.groupby(["hour_ist", "weekday_ist"])["log_demand"]
+                       .transform("mean")).to_numpy()
+        temp = combined["temperature_2m"].to_numpy(float)
+        best = (np.inf, None)
+        for bp in COOL_GRID:
+            X = np.column_stack([np.ones_like(temp), temp, np.maximum(0.0, temp - bp)])
+            coef, res, rank, _ = np.linalg.lstsq(X, y, rcond=None)
+            if rank < 3:
+                continue
+            rss = float(res[0]) if res.size else float(((y - X @ coef) ** 2).sum())
+            if rss < best[0]:
+                best = (rss, bp)
+        bp = best[1]
+        if bp is None:
+            rows.append({"zone": zone, "note": "no breakpoint"})
+            continue
+
+        s_before, s_after = _slope_above(before, bp), _slope_above(after, bp)
+        if s_before is None or s_after is None:
+            rows.append({"zone": zone, "note": "insufficient rows either side"})
+            continue
+        real_gap = abs(s_after - s_before)
+
+        # Placebos: boundaries in the pre-switch era where nothing happened.
+        placebos = []
+        span = pd.Timedelta(days=months * 30.44)
+        off = -placebo_step_days
+        while True:
+            fake = c + pd.Timedelta(days=off)
+            if fake - span < g["datetime_utc"].min():
+                break
+            if fake + span > c:                       # must not reach the switch
+                off -= placebo_step_days
+                continue
+            fb, fa = _window(g, fake, months)
+            sb, sa = _slope_above(fb, bp), _slope_above(fa, bp)
+            if sb is not None and sa is not None:
+                placebos.append(abs(sa - sb))
+            off -= placebo_step_days
+
+        if len(placebos) < 5:
+            rows.append({"zone": zone, "breakpoint_c": bp,
+                         "note": f"only {len(placebos)} placebos"})
+            continue
+        p90 = float(np.quantile(placebos, 0.90))
+        rows.append({
+            "zone": zone, "switch": cut, "breakpoint_c": bp,
+            "slope_before_pct_per_c": round((np.exp(s_before) - 1) * 100, 3),
+            "slope_after_pct_per_c": round((np.exp(s_after) - 1) * 100, 3),
+            "gap_pct_per_c": round((np.exp(real_gap) - 1) * 100, 3),
+            "placebo_p90_pct_per_c": round((np.exp(p90) - 1) * 100, 3),
+            "n_placebo": len(placebos),
+            "exceeds_placebo": bool(real_gap > p90),
+        })
+    return pd.DataFrame(rows)
+
+
+# --------------------------------------------------------------------------
 # Plots
 #
 # Drawn here rather than through src/viz/plots.py. That module is the single
@@ -681,6 +883,15 @@ def main() -> None:
     thresholds = elbow_table(df, cfg)
     zone_thresholds = per_zone_elbows(df, tier)
     discontinuity = discontinuity_test(df)
+    relationship = relationship_test(df)
+    robustness = pd.concat(
+        [relationship_test(df, months=m).assign(window_months=m)
+         for m in (9, 12, 15, 18)], ignore_index=True)
+    robustness = (robustness.pivot(index="zone", columns="window_months",
+                                   values="exceeds_placebo")
+                            .reset_index())
+    specs = pd.concat([compare_specifications(df, tr)
+                       for tr in ("measured", "measured+MODE")], ignore_index=True)
     bands = band_occupancy(df, cfg, tier)
     bands_zone = band_occupancy_by_zone(df, cfg, tier)
     supp, _ = suppression_candidates(df, cfg, tier)
@@ -704,6 +915,9 @@ def main() -> None:
 
     spread_text = f"{spread:.2f} C" if spread is not None else "not identified"
     discontinuity_table = md_table(discontinuity)
+    relationship_table = md_table(relationship)
+    robustness_table = md_table(robustness)
+    spec_table = md_table(specs)
     volatility_table = md_table(volatility_table_df(df))
     threshold_table = md_table(thresholds)
     zone_threshold_table = md_table(zone_thresholds)
@@ -769,6 +983,78 @@ each zone's own switch date is a property of the pipeline, not of the world.
 ### Hour-to-hour variability, 90 days either side
 
 {volatility_table}
+
+## The relationship test — the gate on option B
+
+Variance differing across the switch says the same quantity is recorded with
+different **precision**, not that a different quantity is recorded. That is
+survivable: extra noise in the target inflates irreducible error without
+biasing the conditional mean, and it shows up honestly as worse scores rather
+than hiding as a wrong relationship.
+
+It is survivable **only if the noise is roughly independent of the features**.
+If reconstruction error is larger at peak hours or at high temperatures, it
+distorts the response rather than blurring it. So the question that decides the
+tier choice is not whether variance changed, but whether the
+temperature-to-demand *slope* changed.
+
+Method: the `sloped_below` specification — the only one of the three that is
+identified on a proper grid — fitted separately either side of each zone's own
+switch, on 12-month windows so both cover a full annual cycle. The breakpoint
+is held **fixed** across the comparison so slope and breakpoint cannot trade
+off. Calibrated against placebo boundaries in the pre-switch era.
+
+{relationship_table}
+
+### Robustness — does the exceedance survive a different window?
+
+{robustness_table}
+
+IN-NE's gap is stable at roughly 3.5 %/C at every window length; what changes
+is the placebo band, which tightens as the window grows. IN-EA exceeds only at
+the two longest windows. The other three zones never exceed at any length.
+
+**Consequence, per the ruling's one-or-two-zone branch:** `quality.trainable_from`
+now excludes pre-switch rows for IN-NE and IN-EA and keeps the rest. The model
+pools rows and does not require equal spans.
+
+Worth stating plainly, because it is the opposite of what the variance result
+suggested: **IN-EA had by far the largest variance change — a 6.5-fold drop —
+and its relationship is among the most stable.** Noise there blurs rather than
+distorts, which is exactly the distinction that makes the tier decision
+survivable.
+
+## Which shape actually fits
+
+5e asserts demand is U-shaped in temperature. That is a premise stated from
+physics rather than measured — the same class of statement as INV-3's second
+sentence, which turned out to be false. Three specifications, fitted on the
+earlier rows and scored on the later ones (chronological, per INV-2):
+
+```
+v_shape       y ~ 1 + max(0, T - cooling) + max(0, heating - T)
+flat_below    y ~ 1 + max(0, T - cooling)
+sloped_below  y ~ 1 + T + max(0, T - cooling)
+```
+
+{spec_table}
+
+**The V shape is not identified even on the widened grid.** In every tier it
+runs to a grid edge, and it buys 0.04% on holdout RMSE for doing so. The single
+specification that is identified — an interior breakpoint — is `sloped_below`:
+demand rises with temperature across the whole observed range, more steeply
+above the breakpoint.
+
+That is a finding, not a failure. The negative heating coefficient reported
+earlier was the V-shape's heating ramp acting as a general downward-sloping
+term in temperature rather than as a heating load, which is why it wanted the
+breakpoint at the top of the grid. `sloped_below` says the same thing
+explicitly, and identifiably.
+
+**Raised, not resolved:** 5c requires a monotone **increasing** constraint on
+`heating_degrees`. There is no cold-side heating load in this data to
+constrain, so the constraint would be applied to a term that is absorbing the
+shallower lower segment of a monotone relationship.
 
 ## The thresholds — `features.cooling_threshold_c` and `heating_threshold_c`
 

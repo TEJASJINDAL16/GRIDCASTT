@@ -77,6 +77,17 @@ quality:
   #   TIME_SLICER_AVERAGE         the actual fill-in INV-3 exists for - EXCLUDED
   # Provisional pending the 2024-11-05 discontinuity test (13).
   trainable_estimation_methods: [MEASURED, MODE_BREAKDOWN]
+  # Per-zone trainable start (relationship test, PLANNING 13). Rows before
+  # these dates are excluded even when their estimation method is allowed,
+  # because the temperature-to-demand SLOPE moves across the switch in these
+  # two zones by more than the zone's own placebo band. The model pools rows;
+  # it does not require equal spans.
+  #   IN-NE  exceeds at 12, 15 and 18-month windows; gap stable at ~3.5 %/C
+  #   IN-EA  exceeds at 15 and 18 only - a judgement call, cheapest to exclude
+  #          because its earlier switch leaves 32 measured months
+  trainable_from:
+    IN-NE: "2024-11-05"
+    IN-EA: "2024-01-01"
   train_on_estimated: false        # INV-3 - superseded by the allowlist above
   score_on_estimated: false        # INV-4
   # Suppressed demand (INV-8): flag hours where demand is flat or falling

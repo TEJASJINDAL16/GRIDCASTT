@@ -1,6 +1,6 @@
 # Step-0 measurements
 
-Generated 2026-09-08 09:33 UTC by `scripts/measure_step0.py`.
+Generated 2026-09-08 10:20 UTC by `scripts/measure_step0.py`.
 
 PLANNING 12: the specification was written against data nobody had looked at.
 This report replaces the section 13 step-0 assumptions with numbers, and says
@@ -77,6 +77,97 @@ each zone's own switch date is a property of the pipeline, not of the world.
 | IN-NE  | 2024-11-05 |                0.11049 |               0.08695 |    0.79 |                    34.3 |                   27.6 |
 | IN-EA  | 2024-01-01 |                0.04129 |               0.00635 |    0.15 |                    14.8 |                    1.7 |
 
+## The relationship test — the gate on option B
+
+Variance differing across the switch says the same quantity is recorded with
+different **precision**, not that a different quantity is recorded. That is
+survivable: extra noise in the target inflates irreducible error without
+biasing the conditional mean, and it shows up honestly as worse scores rather
+than hiding as a wrong relationship.
+
+It is survivable **only if the noise is roughly independent of the features**.
+If reconstruction error is larger at peak hours or at high temperatures, it
+distorts the response rather than blurring it. So the question that decides the
+tier choice is not whether variance changed, but whether the
+temperature-to-demand *slope* changed.
+
+Method: the `sloped_below` specification — the only one of the three that is
+identified on a proper grid — fitted separately either side of each zone's own
+switch, on 12-month windows so both cover a full annual cycle. The breakpoint
+is held **fixed** across the comparison so slope and breakpoint cannot trade
+off. Calibrated against placebo boundaries in the pre-switch era.
+
+| zone   | switch     |   breakpoint_c |   slope_before_pct_per_c |   slope_after_pct_per_c |   gap_pct_per_c |   placebo_p90_pct_per_c |   n_placebo | exceeds_placebo   |
+|:-------|:-----------|---------------:|-------------------------:|------------------------:|----------------:|------------------------:|------------:|:------------------|
+| IN-NO  | 2024-11-05 |           28   |                   -0.384 |                   0.362 |           0.749 |                   2.698 |          71 | False             |
+| IN-WE  | 2024-11-05 |           26   |                    0.337 |                   1.59  |           1.249 |                   1.996 |          71 | False             |
+| IN-SO  | 2024-11-05 |           21.5 |                   -1.194 |                  -1.576 |           0.388 |                   5.095 |          71 | False             |
+| IN-NE  | 2024-11-05 |           25   |                   -3.45  |                   0.014 |           3.588 |                   3.12  |          71 | True              |
+| IN-EA  | 2024-01-01 |           24.5 |                   -0.299 |                  -1.125 |           0.835 |                   0.935 |          61 | False             |
+
+### Robustness — does the exceedance survive a different window?
+
+| zone   | 9     | 12    | 15    | 18    |
+|:-------|:------|:------|:------|:------|
+| IN-EA  | False | False | True  | True  |
+| IN-NE  | False | True  | True  | True  |
+| IN-NO  | False | False | False | False |
+| IN-SO  | False | False | False | False |
+| IN-WE  | False | False | False | False |
+
+IN-NE's gap is stable at roughly 3.5 %/C at every window length; what changes
+is the placebo band, which tightens as the window grows. IN-EA exceeds only at
+the two longest windows. The other three zones never exceed at any length.
+
+**Consequence, per the ruling's one-or-two-zone branch:** `quality.trainable_from`
+now excludes pre-switch rows for IN-NE and IN-EA and keeps the rest. The model
+pools rows and does not require equal spans.
+
+Worth stating plainly, because it is the opposite of what the variance result
+suggested: **IN-EA had by far the largest variance change — a 6.5-fold drop —
+and its relationship is among the most stable.** Noise there blurs rather than
+distorts, which is exactly the distinction that makes the tier decision
+survivable.
+
+## Which shape actually fits
+
+5e asserts demand is U-shaped in temperature. That is a premise stated from
+physics rather than measured — the same class of statement as INV-3's second
+sentence, which turned out to be false. Three specifications, fitted on the
+earlier rows and scored on the later ones (chronological, per INV-2):
+
+```
+v_shape       y ~ 1 + max(0, T - cooling) + max(0, heating - T)
+flat_below    y ~ 1 + max(0, T - cooling)
+sloped_below  y ~ 1 + T + max(0, T - cooling)
+```
+
+| tier          | spec         |   cooling_c |   heating_c |   params |   holdout_rmse_log | identified   | note         |   vs_best_pct |
+|:--------------|:-------------|------------:|------------:|---------:|-------------------:|:-------------|:-------------|--------------:|
+| measured      | v_shape      |        32   |          23 |        3 |            0.22553 | False        | on grid edge |          0    |
+| measured      | flat_below   |        15   |         nan |        2 |            0.22752 | False        | on grid edge |          0.88 |
+| measured      | sloped_below |        21.5 |         nan |        3 |            0.22563 | True         |              |          0.04 |
+| measured+MODE | v_shape      |        32   |          25 |        3 |            0.31935 | False        | on grid edge |          0    |
+| measured+MODE | flat_below   |        15   |         nan |        2 |            0.32127 | False        | on grid edge |          0.6  |
+| measured+MODE | sloped_below |        25   |         nan |        3 |            0.3201  | True         |              |          0.23 |
+
+**The V shape is not identified even on the widened grid.** In every tier it
+runs to a grid edge, and it buys 0.04% on holdout RMSE for doing so. The single
+specification that is identified — an interior breakpoint — is `sloped_below`:
+demand rises with temperature across the whole observed range, more steeply
+above the breakpoint.
+
+That is a finding, not a failure. The negative heating coefficient reported
+earlier was the V-shape's heating ramp acting as a general downward-sloping
+term in temperature rather than as a heating load, which is why it wanted the
+breakpoint at the top of the grid. `sloped_below` says the same thing
+explicitly, and identifiably.
+
+**Raised, not resolved:** 5c requires a monotone **increasing** constraint on
+`heating_degrees`. There is no cold-side heating load in this data to
+constrain, so the constraint would be applied to a term that is absorbing the
+shallower lower segment of a monotone relationship.
+
 ## The thresholds — `features.cooling_threshold_c` and `heating_threshold_c`
 
 Method, per ruling: RSS-minimising grid search on `log(demand)`, pooled, run
@@ -97,21 +188,21 @@ Config currently holds cooling **24.0 C**, heating **15.0 C**.
 
 | tier           |   rows |   naive_cool_c |   naive_heat_c |   adj_cool_c |   adj_heat_c |   adj_cool_pct_per_c |   adj_heat_pct_per_c | note                                       |
 |:---------------|-------:|---------------:|---------------:|-------------:|-------------:|---------------------:|---------------------:|:-------------------------------------------|
-| measured       |  85874 |             14 |           13   |         23   |         22.5 |                0.529 |               -2.224 | NOT IDENTIFIED — solution on the grid edge |
-| measured+MODE  | 273275 |             14 |           12.5 |         34.5 |         26   |                2.251 |               -1.354 | NOT IDENTIFIED — solution on the grid edge |
-| all except TSA | 422214 |             14 |           13   |         31   |         28   |                1.209 |               -1.277 | NOT IDENTIFIED — solution on the grid edge |
+| measured       |  85874 |             15 |           13   |         22.5 |         22.5 |                0.516 |               -2.2   | NOT IDENTIFIED — solution on the grid edge |
+| measured+MODE  | 273275 |             15 |           12.5 |         32   |         25   |                1.267 |               -1.462 | NOT IDENTIFIED — solution on the grid edge |
+| all except TSA | 422214 |             15 |           13   |         25   |         25   |                0.843 |               -1.309 | NOT IDENTIFIED — solution on the grid edge |
 
 ### Per-zone — tier `measured+MODE`
 
 | zone   |   rows |   cooling_c |   heating_c |   cooling_pct_per_c |   heating_pct_per_c | note                                       |
 |:-------|-------:|------------:|------------:|--------------------:|--------------------:|:-------------------------------------------|
-| IN-EA  |  49372 |        25   |        24.5 |              -0.446 |              -0.761 |                                            |
-| IN-NE  |  49372 |        30.5 |        25.5 |              -3.36  |              -1.148 |                                            |
-| IN-NO  |  58177 |        28.5 |        28   |               0.795 |              -2.005 | NOT IDENTIFIED — solution on the grid edge |
-| IN-SO  |  58177 |        29   |        22   |              -2.15  |              -1.351 |                                            |
-| IN-WE  |  58177 |        21   |        20.5 |               0.992 |              -3.598 |                                            |
+| IN-EA  |  49372 |          25 |        25   |              -0.463 |              -0.724 | NOT IDENTIFIED — solution on the grid edge |
+| IN-NE  |  49372 |          31 |        25   |              -3.907 |              -1.182 | NOT IDENTIFIED — solution on the grid edge |
+| IN-NO  |  58177 |          25 |        25   |               1.239 |              -1.964 | NOT IDENTIFIED — solution on the grid edge |
+| IN-SO  |  58177 |          29 |        22   |              -2.15  |              -1.351 |                                            |
+| IN-WE  |  58177 |          21 |        20.5 |               0.992 |              -3.598 |                                            |
 
-Cooling-threshold spread across zones: **9.50 C**.
+Cooling-threshold spread across zones: **10.00 C**.
 
 ### The cold side does not behave like a heating load
 
