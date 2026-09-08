@@ -11,6 +11,7 @@ actuals we could not have had would make the backtest lie.
 """
 
 import logging
+import time
 from collections.abc import Iterable
 
 import pandas as pd
@@ -21,10 +22,29 @@ log = logging.getLogger(__name__)
 _TIMEOUT = 60
 
 
-def _get(url: str, params: dict) -> dict:
-    resp = requests.get(url, params=params, timeout=_TIMEOUT)
+def _get(url: str, params: dict, retries: int = 5) -> dict:
+    """GET with backoff on rate limiting and transient server errors.
+
+    Open-Meteo prices a request by how much data it returns, not by the count,
+    so a multi-year pull over eight variables can exhaust the allowance in a
+    handful of calls and answer 429. Backing off and retrying is the difference
+    between a backfill that completes and one that stops three zones in.
+    """
+    delay = 5.0
+    for attempt in range(retries):
+        resp = requests.get(url, params=params, timeout=_TIMEOUT)
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 429 or resp.status_code >= 500:
+            wait = float(resp.headers.get("Retry-After", delay))
+            log.warning("open-meteo %s, retrying in %.0fs (attempt %d/%d)",
+                        resp.status_code, wait, attempt + 1, retries)
+            time.sleep(wait)
+            delay *= 2
+            continue
+        resp.raise_for_status()          # 4xx that retrying will not fix
     resp.raise_for_status()
-    return resp.json()
+    raise RuntimeError("unreachable")
 
 
 def _to_frame(payload: dict, tz: str) -> pd.DataFrame:
