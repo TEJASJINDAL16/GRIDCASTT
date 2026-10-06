@@ -59,6 +59,12 @@ jobs:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
         run: |
+          # Google OAuth values are ASCII; copy/paste can introduce Unicode
+          # en/em dashes, and DVC then fails with an ascii codec error.
+          GDRIVE_CLIENT_ID="${GDRIVE_CLIENT_ID//—/-}"
+          GDRIVE_CLIENT_ID="${GDRIVE_CLIENT_ID//–/-}"
+          GDRIVE_CLIENT_SECRET="${GDRIVE_CLIENT_SECRET//—/-}"
+          GDRIVE_CLIENT_SECRET="${GDRIVE_CLIENT_SECRET//–/-}"
           dvc remote modify --local gdrive gdrive_client_id "$GDRIVE_CLIENT_ID"
           dvc remote modify --local gdrive gdrive_client_secret "$GDRIVE_CLIENT_SECRET"
 
