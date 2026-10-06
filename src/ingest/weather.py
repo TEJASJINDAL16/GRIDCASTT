@@ -1,13 +1,23 @@
 """Open-Meteo weather ingestion.
 
-Two sources, deliberately kept separate:
+Three sources, deliberately kept separate:
 
-  fetch_archive()   past weather — ACTUAL observations. Used to build history.
-  fetch_forecast()  future weather — a PREDICTION. Used at prediction time.
+  fetch_archive()        past weather — ACTUAL observations. History.
+  fetch_forecast()       future weather — a PREDICTION. Prediction time.
+  fetch_previous_runs()  past FORECASTS — what the forecast said N days before
+                         each past target hour. A prediction, not an
+                         observation, despite being about the past.
 
 Keeping them apart is what stops leakage: at 9am today we only ever know
 the forecast for tomorrow, never tomorrow's actual temperature. Training on
 actuals we could not have had would make the backtest lie.
+
+The third is the subtle case, and it sits on the FORECAST side of that line
+despite taking a date range the way the archive does. It answers "what did we
+believe on 8 September about 11 September", which is information that genuinely
+existed at the earlier time — so it is a legitimate training input where
+fetch_archive's output is not. It is a separate function rather than a mode of
+either other one, so the distinction stays visible at every call site.
 """
 
 import logging
@@ -107,3 +117,54 @@ def fetch_forecast(
     }
     log.info("forecast: %d days at (%.4f, %.4f)", days, lat, lon)
     return _to_frame(_get(url, params), tz)
+
+
+def fetch_previous_runs(
+    lat: float,
+    lon: float,
+    variables: Iterable[str],
+    start: str,
+    end: str,
+    max_lead_days: int = 7,
+    url: str = "https://historical-forecast-api.open-meteo.com/v1/forecast",
+    tz: str = "UTC",
+) -> pd.DataFrame:
+    """What the forecast SAID, 1..max_lead_days before each target hour.
+
+    Returns long format — one row per (target hour, lead_days) — so the shape
+    matches the vintage archive rather than the API's wide form.
+
+    `lead_days == 0` is deliberately EXCLUDED. The plain variable is the
+    provider's best current estimate for a past hour, which is an analysis and
+    not a forecast; including it would be the same INV-1 mistake as the
+    negative lead_time rows in the captured archive (5d).
+    """
+    leads = list(range(1, max_lead_days + 1))
+    wanted = [f"{v}_previous_day{d}" for v in variables for d in leads]
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": start,
+        "end_date": end,
+        "hourly": ",".join(wanted),
+        "timezone": tz,
+    }
+    log.info("previous runs: %s..%s at (%.4f, %.4f), leads 1-%d",
+             start, end, lat, lon, max_lead_days)
+    hourly = _get(url, params)["hourly"]
+
+    stamps = pd.to_datetime(pd.Series(hourly["time"]))
+    if stamps.dt.tz is None:
+        stamps = stamps.dt.tz_localize(tz)
+    stamps = stamps.dt.tz_convert("UTC")
+
+    frames = []
+    for lead in leads:
+        block = {"target_datetime": stamps, "lead_days": lead}
+        for var in variables:
+            column = f"{var}_previous_day{lead}"
+            if column in hourly:
+                block[var] = pd.Series(hourly[column], dtype="float64")
+        frames.append(pd.DataFrame(block))
+    out = pd.concat(frames, ignore_index=True)
+    return out.sort_values(["target_datetime", "lead_days"]).reset_index(drop=True)

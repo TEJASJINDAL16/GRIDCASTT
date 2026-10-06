@@ -11,7 +11,7 @@ demand:
   base_url: https://api.electricitymap.org/v3     # confirmed by probe
   range_path: /power-breakdown/past-range
   target_field: powerConsumptionTotal             # this is demand, in MW
-  primary_zone: IN-NO          # Northern India — includes Delhi
+  primary_zone: IN-NO          # Northern India - includes Delhi
   all_zones: [IN-NO, IN-WE, IN-SO, IN-EA, IN-NE]
   granularity: hourly
   # MEASURED 2026-09-08: all five zones serve data from 2017-01. The previous
@@ -35,6 +35,16 @@ weather:
   provider: open_meteo
   archive_url: https://archive-api.open-meteo.com/v1/archive
   forecast_url: https://api.open-meteo.com/v1/forecast
+  # Lead-resolved PAST forecasts: what the forecast said N days before each
+  # target hour. Verified 2026-09-13 to serve all eight configured variables
+  # at leads 1-7, for arbitrary dates from 2022 onward.
+  #
+  # This disproves 5d's "the gap cannot be closed retroactively". It does NOT
+  # replace the daily archive: leads stop at 7 days where our own capture
+  # stores 16, the issue time within the day is unspecified, and relying on a
+  # third party's retroactive archive is a dependency the daily job removes.
+  previous_runs_url: https://previous-runs-api.open-meteo.com/v1/forecast
+  historical_forecast_url: https://historical-forecast-api.open-meteo.com/v1/forecast
   variables:
     - temperature_2m
     - relative_humidity_2m
@@ -137,10 +147,8 @@ quality:
     IN-EA: "2024-01-01"
   train_on_estimated: false        # INV-3 - superseded by the allowlist above
   score_on_estimated: false        # INV-4
-  # Suppressed demand (INV-8): flag hours where demand is flat or falling
-  # while temperature rises. Values provisional until measured.
-  suppression_temp_rise_c: 1.0
-  suppression_demand_delta_pct: 0.0
+  # Owner decision 2026-10-06: retain eligible observations, including
+  # hot-period drops; no inferred-cause filtering.
 
 # --- Daily archive (see 5d) ---
 # Unrecoverable if delayed. Open-Meteo serves observed history and the CURRENT
@@ -153,6 +161,13 @@ archive:
   # (5h) rather than fall off a cliff.
   forecast_days: 16                # Open-Meteo's maximum
   vintage_dir: data/raw/forecast_vintages
+  # RECONSTRUCTED vintages live apart from captured ones, always. Their
+  # issue time within the day is unknown, their provenance is a third party's
+  # archive rather than our own capture, and 5d's point-in-time-correctness
+  # claim rests on the captured set. Mixing them would quietly weaken it.
+  recovered_vintage_dir: data/raw/forecast_vintages_recovered
+  recovery_max_lead_days: 7          # the API's limit
+  recovery_start: "2022-01-01"       # earliest date serving previous_dayN
   revision_dir: data/raw/demand_revisions
   # How far back to re-fetch demand each day looking for revisions. Must
   # comfortably exceed the settlement lag we are trying to measure; the single
@@ -223,6 +238,18 @@ forecast_noise:
   enabled: true
   day_bias_sigma_c: 1.2            # ASSUMPTION - measure from vintages
   hour_wobble_sigma_c: 0.5         # ASSUMPTION - measure from vintages
+
+# Fixed Stage 2 comparators, separate from Stage 3's unselected parameters.
+# No choices here use walk-forward or holdout scores.
+baselines:
+  ridge_alpha: 1.0
+  per_zone_model: ridge
+
+backtest:
+  issue_hour_ist: 10
+  report_path: reports/baseline.md
+  results_dir: reports/baseline
+  predictions_path: data/interim/baseline_predictions.parquet
 
 # --- Hyperparameter tuning ---
 tuning:

@@ -4,13 +4,15 @@ Day-ahead electricity demand forecasting for the Indian grid — hourly, for all
 five regional zones, with a model that keeps itself current and refuses an
 update that would make it worse.
 
-> **Status: under construction.** Stage 1 of 5. The build order, what "done"
+> **Status: under construction.** Stage 2's feature and baseline implementation
+> is built locally; the production model is next. The build order, what "done"
 > means at each stage, and what is deliberately not built yet are in
 > [BUILD_STAGES.md](BUILD_STAGES.md). The specification is
 > [PLANNING.md](PLANNING.md).
 >
-> No performance numbers are published yet. There will be none until there is a
-> baseline to compare them against.
+> The twelve-fold baseline comparison, coverage limits and remaining assumptions
+> are in [reports/baseline.md](reports/baseline.md). Reproduce it with `make baseline`.
+> Eligible observations are retained without speculative cause-based filtering.
 
 ---
 
@@ -41,7 +43,7 @@ point.
 | Issue time | 10:00 IST, so lead time is 14–38 hours |
 | Method | direct multi-step — every target hour predicted independently, never recursively |
 
-## Architecture
+## Planned Architecture
 
 One pooled model across all five zones, with `zone` as a native categorical
 feature. Trained on `log(demand)`, which makes a 10% swing the same size in
@@ -52,7 +54,7 @@ accuracy for negligible large-zone gains.
 It is a two-stage hybrid, everywhere and in all conditions:
 
 ```
-prediction = Ridge( cooling_degrees, heating_degrees, trend )
+prediction = Ridge( temperature, cooling_degrees, trend )
            + LightGBM( all features, fitted on the residual )
            then exp() back to megawatts, with a Duan smearing correction
 ```
@@ -66,9 +68,10 @@ training period's level permanently. A line keeps rising.
 
 **Stage 2, LightGBM** carries everything else — daily shape, weekday effects,
 holidays, zone differences, interactions — fitted on what the linear stage left
-over. Between 15 °C and 24 °C both degree-day terms are zero, so the linear
-component is dormant in the common case and only speaks when temperature
-genuinely matters.
+over. Raw temperature carries the slope throughout the range; cooling degrees
+add the steeper response above the measured breakpoint. Heating degrees were
+removed after the pooled U-shaped response failed measurement. These two model
+stages belong to Build Stage 3; they are distinct from Build Stage 2's baseline work.
 
 ## Retraining
 
@@ -108,11 +111,11 @@ pooling helps at all, at no extra cost, since the backtest is running anyway.
 | Weather | [Open-Meteo](https://open-meteo.com/) — archive for history, forecast for prediction time | no |
 | Holidays | `holidays` package, Indian state subdivisions, plus a hand-maintained festival list | no |
 
-Weather forecast vintages are archived daily from the first day of the project.
-Open-Meteo serves observed history and the current forecast, but never what the
-forecast said on a past date — so without an archive the model trains on
-perfect temperature and is deployed on approximate temperature, and learns to
-trust it more than it should. That gap cannot be closed retroactively.
+The daily archive script captures forecasts with exact issue times. A separate
+recovery script retrieves historical forecasts at leads of one to seven days,
+with their provenance and uncertain intra-day issue time kept explicit.
+Stage 2 uses the configured constant-sigma weather-noise bridge; it does not
+present recovered forecasts as exact historical 10:00 IST captures.
 
 Electricity data provided by **Electricity Maps**, used under an academic
 licence for non-commercial research.

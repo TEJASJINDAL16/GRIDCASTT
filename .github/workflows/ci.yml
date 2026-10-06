@@ -19,6 +19,15 @@ on:
 permissions:
   contents: read
 
+# GitHub runners have no UTF-8 locale set, so Python falls back to ascii for
+# open() and DVC crashed reading a .gitignore containing an em dash. Forcing
+# UTF-8 mode closes that whole class rather than chasing one character at a
+# time. Every tool-parsed file is also ascii-only now; this is the second belt.
+env:
+  PYTHONUTF8: "1"
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

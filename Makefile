@@ -13,7 +13,7 @@ IMAGE  := gridcast
 UNAME  := $(shell uname -s)
 
 .PHONY: help setup deps check-libomp weather em backfill backfill-weather \
-        archive measure test docker docker-test clean
+        archive backfill-vintages measure baseline test docker docker-test clean
 
 help:  ## Show available targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*##"};{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -32,7 +32,7 @@ $(VENV):
 check-libomp:  ## macOS only: LightGBM needs Homebrew libomp at runtime
 ifeq ($(UNAME),Darwin)
 	@test -f "$$(brew --prefix 2>/dev/null)/opt/libomp/lib/libomp.dylib" || { \
-	  echo "libomp missing — LightGBM will fail to load."; \
+	  echo "libomp missing - LightGBM will fail to load."; \
 	  echo "fix:  brew install libomp"; exit 1; }
 endif
 
@@ -59,15 +59,21 @@ backfill: setup  ## Pull and cache the full demand history (run once)
 backfill-weather: setup  ## Pull and cache observed weather history (run once)
 	$(PY) scripts/backfill_weather.py $(ARGS)
 
-# --- daily archive (PLANNING 5d — unrecoverable if delayed) ---------------
+# --- daily archive (PLANNING 5d - unrecoverable if delayed) ---------------
 
 archive: setup  ## Archive a weather forecast vintage and a demand-revision snapshot
 	$(PY) scripts/archive_daily.py $(ARGS)
+
+backfill-vintages: setup  ## Recover past forecast vintages (leads 1-7, 2022+)
+	$(PY) scripts/backfill_vintages.py $(ARGS)
 
 # --- analysis ------------------------------------------------------------
 
 measure: setup  ## Step-0 measurements -> reports/step0_measurements.md
 	$(PY) scripts/measure_step0.py $(ARGS)
+
+baseline: setup  ## Score four baselines on twelve monthly folds (cached data only)
+	$(PY) scripts/backtest_baselines.py
 
 # --- checks --------------------------------------------------------------
 

@@ -47,7 +47,7 @@ All five build stages below deliver `PLANNING.md`'s **Phase 1**.
 | Stage | Name | State |
 |---|---|---|
 | 1 | Foundation and Measurement | COMPLETE (19bc464) |
-| 2 | Features and the Baseline | READY — awaiting PR review |
+| 2 | Features and the Baseline | COMPLETE locally - exit gate passed; owner eligibility policy applied |
 | 3 | Model and Tuning | BLOCKED — needs stage 2 |
 | 4 | Monitoring, Registry, Daily Job | BLOCKED — needs stage 3 |
 | 5 | Dashboard, Deploy, Evidence | BLOCKED — needs stage 4 |
@@ -154,7 +154,7 @@ and the measurement script.
       `dvc push`, nothing else
 - [x] `reports/step0_measurements.md` exists, with plots, covering:
       demand vs temperature (the elbow), the cold-side inflection, band
-      occupancy, candidate suppressed-demand hours, year-on-year growth,
+      occupancy, year-on-year growth,
       holiday vs matched non-holiday demand
 - [x] The elbow fitted by the method below, **both ways**, both numbers reported
 - [x] Per-zone elbows reported as evidence. If they spread by more than about
@@ -162,8 +162,8 @@ and the measurement script.
       phase 1 change
 - [x] `config/config.yaml` updated with the **measured** values for the
       temperature breakpoint and `evaluate.temperature_bands_c`, plus
-      `evaluate.min_band_rows: 500`. **`quality.suppression_*` moved to
-      stage 2** — see below
+      `evaluate.min_band_rows: 500`. Inferred-cause filtering was withdrawn
+      by the owner 2026-10-06 — see below
 - [x] `PLANNING.md` section 13 table cells updated to the measured value followed
       by `(measured YYYY-MM-DD)`; value, date and method in the commit message
 - [x] `README.md` rewritten to match the shipped design — see below
@@ -201,40 +201,14 @@ The workflow does the archive and `dvc push` and **nothing else**. It is not
 `daily.yml`, which still arrives at stage 5 with scoring, triggers, retraining
 and publication. This is the one sanctioned piece of working ahead in stage 1.
 
-### Why `quality.suppression_*` moved to stage 2
+### Owner Eligibility Decision, 2026-10-06
 
-This is a **scoping correction, not a deferral of difficulty.** INV-8 still
-binds before any model trains, so stage 2 is the correct home — not stage 3.
-
-The stage-1 detector was a raw hour-over-hour delta rule: flag an hour where
-temperature rose by `suppression_temp_rise_c` while demand did not rise. On the
-real data it fires on **3-11% of all hours**, which is not load shedding — it
-is ordinary morning warming, when temperature climbs and demand has not yet
-picked up. Writing those numbers to config as a measurement would have poisoned
-INV-8 at its source: the invariant would be excluding a tenth of the training
-data for no reason, and the exclusion would look principled.
-
-The detector that is actually needed depends on a **fitted temperature
-response**, which does not exist until the feature pipeline does:
-
-```
-fit the temperature response, then flag SUSTAINED runs of large negative
-residuals at HIGH absolute temperature — demand far below what this
-temperature normally produces, for several consecutive hours, when it is hot
-```
-
-**Three sanity checks it must pass before any parameter is written anywhere.**
-There is no ground truth for load shedding to validate against, so the pattern
-is the evidence:
-
-| Check | Why |
-|---|---|
-| rate well under 1% of hours | 3-11% is a detector finding normal behaviour |
-| concentrated in **episodes**, not scattered | shedding is an event, not a texture |
-| **seasonal** — summer peaks — and **declining** across 2017-2026 | Indian supply improved over the period; a detector blind to that is finding noise |
-
-A detector that fires uniformly across seasons and years is finding noise,
-whatever its rate. The report carries the **pattern**, not just the number.
+The earlier inferred-suppression requirement is withdrawn. INV-8 now requires
+retaining eligible observations without guessing their cause. No temperature /
+negative-residual / consecutive-hours rule may flag, exclude or downweight them.
+The detector, thresholds, linked minimum-history gate and its report are removed.
+Standard validity, estimation eligibility and time-boundary checks remain.
+Earlier Stage Log entries describe historical decisions, not current policy.
 
 ### The README rewrite
 
@@ -264,8 +238,8 @@ turns out to sit somewhere surprising, report it — do not adjust anything else
 to accommodate it.
 
 **RULE** Nothing may ever import from `scripts/measure_step0.py`. It does holiday
-lookup and suppression detection ad hoc, using the `holidays` package directly,
-because `src/ingest/calendar_in.py` and `src/features/quality.py` are stage 2
+lookup ad hoc, using the `holidays` package directly,
+because `src/ingest/calendar_in.py` is a stage 2
 deliverables. It is throwaway analysis. If a function in it proves worth keeping,
 it is **rewritten** into the proper module in stage 2, never imported across.
 
@@ -290,7 +264,6 @@ Nothing new. Stage 1 complete.
 | Path | Purpose | PLANNING ref |
 |---|---|---|
 | `src/ingest/calendar_in.py` | holidays, festivals, IST conversion | 5e |
-| `src/features/quality.py` | suppressed-demand detection (INV-8), and the measurement of `quality.suppression_*` moved here from stage 1 | 5f P2, 13 |
 | `src/features/weather_feats.py` | cooling/heating degrees, per city then aggregate | 5e |
 | `src/features/forecast_noise.py` | training-time weather noise, applied to raw temperature **before** the degree transforms | 5d |
 | `src/features/build.py` | THE feature builder. Training and serving both call this | INV-9 |
@@ -306,26 +279,28 @@ baselines before metrics (MASE and RMSSE denominators are the baseline).
 
 ### Deliverables
 
-- [ ] `features/build.py` is the only path from raw data to a feature matrix
-- [ ] Contract test green: training and serving paths emit identical column
+- [x] `features/build.py` is the only path from raw data to a feature matrix
+- [x] Contract test green: training and serving paths emit identical column
       names, order and dtypes
-- [ ] Every invariant INV-1..INV-9 has a test, and all are green
-- [ ] `quality.suppression_*` measured and written to config, with the detector
-      passing all three sanity checks — rate under 1%, concentrated in
-      episodes, seasonal and declining across 2017-2026. The **pattern** is
-      reported, not just the rate
-- [ ] `reports/baseline.md`: all four baselines scored across the twelve
+- [x] Every invariant INV-1..INV-9 has a test, and all are green
+- [x] Eligible observations retained without speculative cause-based filtering
+      (INV-8, revised by the owner 2026-10-06); hot-drop regression tests green
+- [x] `reports/baseline.md`: all four baselines scored across the twelve
       walk-forward folds
-- [ ] Every figure in it stratified by temperature band, hour, zone, day type
+- [x] Every figure in it stratified by temperature band, hour, zone, day type
       and lead time, **with row counts**
-- [ ] The headline baseline number recorded explicitly as the number to beat
-- [ ] Error rises with lead time — or, if it does not, a written investigation
+- [x] The headline baseline number recorded explicitly as the number to beat
+- [x] Error rises with lead time — or, if it does not, a written investigation
       of the suspected leak (5g makes this mandatory)
 
 ### Exit gate
 
 `reports/baseline.md` exists and states the number to beat. All invariant tests
 green. The lead-time check passed or was investigated in writing.
+
+Local implementation verified 2026-10-06; see `reports/stage2_completion.md`.
+The former suppression deliverable was withdrawn by the owner, not asserted
+as scientifically proven. The revised retention policy is covered by tests.
 
 ### Do not do in this stage
 
@@ -436,7 +411,7 @@ detection delay.
 - [ ] `settlement_frontier_replay` handled honestly: if the revision archive is
       too young, calibrate on the settled backtest and record the thresholds as
       provisionally optimistic
-- [ ] Routing implemented: data drift vs concept drift, suppression, failed
+- [ ] Routing implemented: data drift vs concept drift, failed
       validation, low settled fraction
 - [ ] Cooldowns implemented for all three outcomes: promotion, rejection, failure
 - [ ] Post-promotion watch implemented and able to escalate inside a cooldown
@@ -590,3 +565,12 @@ CARRIED FORWARD
   Stage 3  estimation-tier ablation, now a GATE; plus "does including
            IN-EA pre-switch data help?"
 ```
+
+
+### 2026-10-06 - Owner Removes Inferred-Suppression Policy
+
+Supersedes the earlier Stage 1/2 detector work and its pending sanity checks.
+Remove the heuristic, its thresholds and the linked 1,000-row training gate.
+Retain all otherwise eligible observations and test hot sustained drops and
+short eligible history end to end. Regenerate the baseline under this policy;
+input caches are unchanged. No Git actions are performed.

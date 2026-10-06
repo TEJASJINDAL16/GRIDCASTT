@@ -23,7 +23,7 @@ README = pathlib.Path("README.md")
 
 @pytest.fixture(scope="module")
 def readme() -> str:
-    return README.read_text()
+    return README.read_text(encoding="utf-8")
 
 
 def test_readme_does_not_claim_scheduled_retraining(readme):

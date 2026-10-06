@@ -1,4 +1,4 @@
-# gridcast — the pinned environment (PLANNING 14, step 0a).
+# gridcast - the pinned environment (PLANNING 14, step 0a).
 #
 # Written before any result exists. Retrofitting a pinned environment after
 # nine steps of results means none of those nine results are reproducible,
@@ -13,7 +13,7 @@
 FROM python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
 
 # libgomp1 is LightGBM's OpenMP runtime on Linux. Without it `import lightgbm`
-# fails at dlopen, not at pip install — so it must be here, not in requirements.
+# fails at dlopen, not at pip install - so it must be here, not in requirements.
 # git is needed because the daily job commits state/ back (PLANNING 14).
 #
 # Deliberately not version-pinned. The base image is pinned by digest and the

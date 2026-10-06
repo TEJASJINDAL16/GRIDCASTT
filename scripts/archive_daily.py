@@ -176,20 +176,51 @@ def _known_state(cfg: dict, zones: list[str]) -> pd.DataFrame:
 def archive_demand_revisions(cfg: dict, observed_at: datetime) -> tuple[int, list[str]]:
     zones = get(cfg, "demand.all_zones")
     lookback = get(cfg, "archive.revision_lookback_days")
-    out = (PROJECT_ROOT / get(cfg, "archive.revision_dir")
-           / f"{observed_at:%Y-%m-%d}.parquet")
+    revision_dir = PROJECT_ROOT / get(cfg, "archive.revision_dir")
+    # Created unconditionally. The directory is DVC-tracked, and `dvc add` on a
+    # path that does not exist fails the step - which would discard the weather
+    # vintage collected moments earlier.
+    revision_dir.mkdir(parents=True, exist_ok=True)
+    out = revision_dir / f"{observed_at:%Y-%m-%d}.parquet"
 
-    key = get_api_key("EM_API_KEY")
+    # PLANNING 5h puts "demand API down" in the DEGRADE column: issue the
+    # forecast normally, skip scoring only. The same holds here - a demand
+    # failure must not take the weather archive down with it. This read was
+    # unguarded, and it cost five days of vintages: the key was absent, the
+    # RuntimeError propagated, the step failed, and `dvc push` never ran even
+    # though 1,920 rows of vintage had already been written.
+    try:
+        key = get_api_key("EM_API_KEY")
+    except Exception as exc:
+        log.error("  revisions: NO KEY - %s", exc)
+        return 0, list(zones)
+
     end = datetime.now(UTC)
     start = end - timedelta(days=lookback)
     baseline = _known_state(cfg, zones)
 
+    # The past-range endpoint refuses more than 10 days of hourly data per
+    # call, and fetch_range treats the 4xx as unrecoverable and returns no
+    # rows. This asked for 21 days in one call, so demand revisions had NEVER
+    # been written - on the runner or locally. Two section 13 placeholders,
+    # splits.purge_gap_days and drift.settlement_lag_days, are measurable only
+    # from this archive, so they could never have been replaced either.
+    chunk = timedelta(days=get(cfg, "demand.chunk_days"))
+
+    def fetch_window(zone: str) -> list[dict]:
+        rows, cursor = [], start
+        while cursor < end:
+            stop = min(cursor + chunk, end)
+            rows += fetch_range(key, zone, cursor, stop)
+            cursor = stop
+        return rows
+
     frames, failed = [], []
     for zone in zones:
         try:
-            rows = fetch_range(key, zone, start, end)
+            rows = fetch_window(zone)
         except Exception as exc:
-            log.error("  revisions %s: FAILED — %s", zone, exc)
+            log.error("  revisions %s: FAILED - %s", zone, exc)
             failed.append(zone)
             continue
         if not rows:
@@ -231,6 +262,7 @@ def archive_demand_revisions(cfg: dict, observed_at: datetime) -> tuple[int, lis
                  zone, len(interesting), int(interesting["first_sight"].sum()), flips)
 
     if not frames:
+        log.info("  revisions: nothing changed in the lookback window")
         return 0, failed
 
     added = _merge_parquet(out, pd.concat(frames, ignore_index=True),
@@ -286,7 +318,7 @@ def main() -> None:
     state = PROJECT_ROOT / "state" / "runs"
     state.mkdir(parents=True, exist_ok=True)
     record = state / f"{run_at:%Y-%m-%d}-archive.jsonl"
-    with record.open("a") as f:
+    with record.open("a", encoding="utf-8") as f:
         f.write(json.dumps(status, default=str) + "\n")
     log.info("status: %s -> %s", status["outcome"], record.name)
 

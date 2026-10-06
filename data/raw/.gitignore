@@ -9,3 +9,5 @@
 /demand_IN-SO.parquet
 /demand_IN-EA.parquet
 /demand_IN-NE.parquet
+/demand_revisions
+/forecast_vintages_recovered

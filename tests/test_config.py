@@ -87,7 +87,7 @@ def test_band_thresholds_are_ordered(cfg):
 def test_config_yaml_has_no_duplicate_keys():
     """PyYAML silently keeps the last of a duplicated key, so a stray paste
     changes a value with nothing to show for it."""
-    text = pathlib.Path("config/config.yaml").read_text()
+    text = pathlib.Path("config/config.yaml").read_text(encoding="utf-8")
 
     class StrictLoader(yaml.SafeLoader):
         pass
@@ -128,7 +128,7 @@ def test_the_backfill_origin_is_not_duplicated_in_code(cfg):
         for path in pathlib.Path(folder).rglob("*.py"):
             if "__pycache__" in path.parts:
                 continue
-            if origin in path.read_text():
+            if origin in path.read_text(encoding="utf-8"):
                 offenders.append(path.as_posix())
     assert not offenders, (
         f"demand.backfill_start ({origin}) is hardcoded in {offenders}; "

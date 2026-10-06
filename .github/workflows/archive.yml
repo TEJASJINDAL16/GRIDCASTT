@@ -1,12 +1,12 @@
 # Archive only (PLANNING 5d, step 0c).
 #
-# This is NOT daily.yml. It does two things — archive, then dvc push — and
+# This is NOT daily.yml. It does two things - archive, then dvc push - and
 # nothing else. No scoring, no triggers, no retraining, no publication; those
 # arrive with daily.yml at stage 5.
 #
 # It runs from stage 1 because weather forecast vintages and demand revisions
 # are unrecoverable if delayed, and three section 13 placeholders become
-# measurable only by accumulating daily runs over four to eight weeks — longer
+# measurable only by accumulating daily runs over four to eight weeks - longer
 # than stages 2 through 4 will take. A laptop scheduler silently misses every
 # day the machine is asleep, and a missed day cannot be reconstructed.
 name: archive
@@ -23,6 +23,15 @@ on:
 # runner is not written). That needs write access.
 permissions:
   contents: write
+
+# GitHub runners have no UTF-8 locale set, so Python falls back to ascii for
+# open() and DVC crashed reading a .gitignore containing an em dash. Forcing
+# UTF-8 mode closes that whole class rather than chasing one character at a
+# time. Every tool-parsed file is also ascii-only now; this is the second belt.
+env:
+  PYTHONUTF8: "1"
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
 
 concurrency:
   # Schedulers occasionally fire twice. Serialise rather than race two runs
@@ -50,8 +59,8 @@ jobs:
       - name: Configure the DVC remote
         # The personal OAuth client lives in .dvc/config.local, which is
         # gitignored under INV-6, so the runner has no copy of it. Without
-        # these, DVC falls back to its shared OAuth app — which is throttled
-        # globally — and nothing announces the fallback.
+        # these, DVC falls back to its shared OAuth app - which is throttled
+        # globally - and nothing announces the fallback.
         #
         # --local writes .dvc/config.local, which is gitignored, so nothing
         # here can be committed by the step below.
@@ -67,7 +76,17 @@ jobs:
         # known, not just what this runner happens to have.
         env:
           GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
-        run: dvc pull --allow-missing || echo "nothing to pull yet"
+        # NOT masked with `|| true`. The original swallowed every failure
+        # behind a reassuring message, and hid a broken Drive credential for
+        # five days. A first run legitimately has nothing to pull, so only
+        # that case is tolerated - and it is reported either way.
+        run: |
+          if dvc pull --allow-missing; then
+            echo "pull ok"
+          else
+            echo "::warning::dvc pull failed - continuing, but the revision"\
+                 "baseline may be incomplete and the remote may be misconfigured"
+          fi
 
       - name: Archive vintages, observed weather and demand revisions
         # INV-6: the key is read by src/config.py and passed to a request
@@ -78,17 +97,29 @@ jobs:
 
       - name: Push archives to the DVC remote
         # A vintage that exists only on a destroyed runner is not an archive.
+        #
+        # `if: always()` is the whole point. The archive step exits non-zero on
+        # a degrade so the alert fires (PLANNING 14), but the data it DID
+        # collect must reach the remote first. Without this, five days of
+        # successfully archived vintages were discarded because an unrelated
+        # part of the same script raised.
+        if: always()
         env:
           GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
         run: |
-          dvc add data/raw/forecast_vintages data/raw/demand_revisions
+          for d in data/raw/forecast_vintages data/raw/demand_revisions; do
+            if [ -d "$d" ]; then dvc add "$d"; else echo "skip $d (absent)"; fi
+          done
           dvc push
 
       - name: Commit the status record and the DVC pointers
+        if: always()
         run: |
           git config user.name  "gridcast-archive[bot]"
           git config user.email "noreply@github.com"
-          git add state/ data/raw/*.dvc data/.gitignore 2>/dev/null || true
+          # data/raw/.gitignore, not data/.gitignore - DVC writes its generated
+          # entry beside the tracked path, and the old glob staged nothing.
+          git add state/ data/raw/*.dvc data/raw/.gitignore 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "nothing to commit"
           else

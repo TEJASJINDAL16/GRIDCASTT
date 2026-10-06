@@ -899,33 +899,17 @@ it. Fix before measuring and you cannot tell whether you helped.
 
 ---
 
-### Principle 2 — Corrupt data at extremes is worse than no data
+### Principle 2 - Learn from observations without guessing their cause
 
-A model that faithfully fits biased data is confidently wrong, and nothing
-downstream can detect it.
+**Owner decision, 2026-10-06.** Retain otherwise eligible recorded demand,
+including sustained drops during unusually hot weather. Such patterns have
+many possible causes; temperature and a negative residual do not establish one.
 
-**RULE** Detect hours where demand plateaus or falls while temperature
-continues rising. Flag them and **exclude** them from training. Not downweight —
-INV-8 admits no partial weight.
-
-*Rationale:* the source reports power **consumed**, not power **wanted**. When
-the grid sheds load, consumption is capped by supply and the recorded value
-becomes a ceiling rather than an observation:
-
-```
-47 C evening
-  demand wanted     62,000 MW
-  grid delivered    58,000 MW     <- load shedding
-  data records      58,000 MW     <- what training sees
-```
-
-A model trained on this learns that demand stops rising above about 46 C, and
-will then under-forecast every future heatwave while fitting its training data
-beautifully. This is why Indian grid reporting separates peak demand, peak
-demand met and deficit — the gap is real and the industry has a name for it.
-
-This principle is second because modelling on a corrupt target is wasted
-effort. No architecture repairs a biased label.
+**RULE** Do not label, flag, exclude or downweight observations using a
+suspected load-shedding or demand-suppression heuristic. Standard input validity,
+estimation-method eligibility and chronological availability checks remain.
+The model learns recorded consumption; this is not a claim that it identifies
+the cause of a drop or reconstructs unmet demand.
 
 ---
 
@@ -1121,7 +1105,7 @@ better rather than differently distributed.
 
 *Rationale for not switching to RMSSE alone:* squared-error metrics are
 fragile to bad data — a single corrupt row can dominate the score. We exclude
-estimated and suppressed rows, but "we believe we excluded them all" is not
+ineligible estimated rows, but "we believe we excluded them all" is not
 the same as a metric that cannot be hijacked by one row we missed.
 
 **RULE** Compare fold-by-fold win rate, not only the mean. A model whose good
@@ -1684,8 +1668,6 @@ trigger condition met
   |
   |-- within-band error unchanged, only the mix of conditions moved?
   |        -> DATA DRIFT. Log, annotate the dashboard, do NOT retrain.
-  |-- suppression flags present on those rows (INV-8)?
-  |        -> data exclusion, not a trigger
   |-- ingest validation failed, or settled fraction too low?
   |        -> pipeline alert, or too early to judge. Not a trigger.
   |-- bands degraded across the board and bias leaning one way?
@@ -1887,7 +1869,7 @@ source uses three estimation methods and they are not equivalent (11). One,
 training on it teaches the model to reproduce an average. Another,
 `GENERAL_PURPOSE_ZONE_MODEL`, is a modelled series measured to be roughly four
 times too smooth at the evening peak — training on it teaches under-dispersion,
-which is invisible in a MAPE headline and fatal to 5f's extremes and to INV-8.
+which is invisible in a MAPE headline and undermines evaluation at extremes.
 
 *This invariant originally asserted that `is_estimated == True` meant a
 `TIME_SLICER_AVERAGE` fill-in. That was written from a single observation and
@@ -1910,9 +1892,10 @@ on the reserved window only. The model never saw those rows, so it feels
 clean — but the experimenter did, and a test set used to make a choice has
 become training data.
 
-**INV-8 — Never train on suppressed-demand hours.** Where the grid shed load
-the recorded value is a supply ceiling, not a demand observation. Training on
-it teaches the model that demand stops rising in a heatwave.
+**INV-8 - No speculative cause-based exclusions.** Retain otherwise eligible
+observations, including hot-period demand drops. Do not infer a cause or discard
+training records from temperature and demand residuals alone (owner decision,
+2026-10-06).
 
 **INV-9 — One feature definition.** Training and serving both call
 `features/build.py` and nothing else. A second implementation drifts from the
@@ -2046,7 +2029,6 @@ src/
     build.py                THE feature builder. Both training and serving
                             call this and nothing else.
     weather_feats.py        cooling/heating degrees, per-city then aggregate
-    quality.py              suppressed-demand detection (INV-8)
   models/
     hybrid.py               Ridge stage + LightGBM stage
     baselines.py            seasonal naive, hour x weekday, ridge-all, per-zone
@@ -2107,7 +2089,7 @@ the assumed one.
                                  (5d), and nothing later can reconstruct them
 
  1  ingest/calendar_in.py        holidays, festivals, IST conversion
- 2  features/quality.py          suppressed-demand detection
+ 2  features/build.py            eligibility without inferred-cause filtering (INV-8)
  3  features/build.py            the core feature set from 5e
  4  backtest/splits.py           boundaries and purge gap
  5  models/baselines.py          seasonal naive (needs the purge gap from 4)
@@ -2190,7 +2172,6 @@ from a number that was always guessed.
 | `evaluate.temperature_bands_c` | 20/30/40/45 | band occupancy, under the sufficiency rule below | step 0 |
 | `splits.purge_gap_days` | 10 | `data/raw/demand_revisions/` — how long until `is_estimated` flips | ~4 weeks of daily runs |
 | `drift.settlement_lag_days` | not set | distribution of measured-minus-created age in `data/raw/demand_revisions/`; report median and P95 | ~4 weeks of daily runs |
-| `quality.suppression_*` | provisional | inspect flat-topped hot hours against known shedding events | step 0 |
 | `train.recency_half_life_days` | 365 | Optuna sweep | step 10 |
 | `train.per_zone_sample_weighting` | false | per-zone loss contribution after the log transform | step 9 |
 | `drift.thresholds.*` | null | replay sweep against `false_alarm_budget_per_year` — see 6 | step 10a |
@@ -2273,7 +2254,7 @@ roughly 0.2% of today's weight, so C buys almost no effective training signal
 while importing data measured to be about four times too smooth at the evening
 peak — standard deviation across days at 18:00 IST of 1,610 MW in 2017 against
 6,780 MW in 2025. Under-dispersed data is worst exactly where this project
-claims to be careful: 5f's extremes and INV-8's suppression detection both
+claims to be careful: stratified evaluation and eligibility checks both
 depend on seeing real variance. C trades the project's best argument for
 nothing.
 

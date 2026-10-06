@@ -1,4 +1,4 @@
-# secrets — never commit
+# secrets - never commit
 .env
 
 # python
@@ -12,14 +12,14 @@ venv/
 *.egg-info/
 
 # data/ is DVC-tracked. PLANNING 14: a directory under DVC control is ignored
-# by DVC's OWN generated entry, never by a hand-written line as well — a path
+# by DVC's OWN generated entry, never by a hand-written line as well - a path
 # both hand-ignored and DVC-tracked fails in confusing ways ("output is
 # git-ignored"). The entries DVC writes live in data/.gitignore and similar.
 
 # os
 .DS_Store
 
-# dvc credentials — INV-6
+# dvc credentials - INV-6
 /.dvc/tmp
 /.dvc/cache
 /.dvc/config.local

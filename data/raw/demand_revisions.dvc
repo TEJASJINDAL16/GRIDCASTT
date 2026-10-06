@@ -1,0 +1,6 @@
+outs:
+- md5: c05f94a2805d5f3bc94448a62d3d1062.dir
+  size: 51975
+  nfiles: 1
+  hash: md5
+  path: demand_revisions

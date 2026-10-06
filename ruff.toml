@@ -6,9 +6,9 @@ line-length = 100
 [lint]
 select = [
     "E",    # pycodestyle
-    "F",    # pyflakes — unused imports and names, undefined references
+    "F",    # pyflakes - unused imports and names, undefined references
     "I",    # import ordering
-    "B",    # bugbear — mutable defaults, loop-variable capture
+    "B",    # bugbear - mutable defaults, loop-variable capture
     "UP",   # pyupgrade
     "SIM",  # simplification
 ]

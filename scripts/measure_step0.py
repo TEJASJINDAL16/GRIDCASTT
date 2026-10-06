@@ -6,9 +6,9 @@ had looked at. This script looks at it and writes reports/step0_measurements.md.
     make measure
 
 THROWAWAY ANALYSIS. Nothing may ever import from this module (BUILD_STAGES,
-stage 1). Holiday lookup and suppression detection are done ad hoc here,
-directly against the `holidays` package, because src/ingest/calendar_in.py and
-src/features/quality.py are stage 2 deliverables. If a function here proves
+stage 1). Holiday lookup is done ad hoc here,
+directly against the `holidays` package, because src/ingest/calendar_in.py is
+a stage 2 deliverable. If a function here proves
 worth keeping it is REWRITTEN there, never imported across — an import edge is
 how a throwaway script becomes load-bearing without anyone deciding it should.
 
@@ -360,38 +360,6 @@ def band_occupancy_by_zone(df: pd.DataFrame, cfg: dict, tier: str) -> pd.DataFra
                                  right=False))
     return (sub.groupby(["zone", "band"], observed=False).size()
                .unstack("band", fill_value=0))
-
-
-# --------------------------------------------------------------------------
-# Suppressed demand — INV-8 candidates
-# --------------------------------------------------------------------------
-
-def suppression_candidates(df: pd.DataFrame, cfg: dict, tier: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Hours where demand plateaus or falls while temperature keeps rising.
-
-    5f principle 2: the source reports power CONSUMED, not power WANTED. When
-    the grid sheds load the recorded value is a supply ceiling, and a model
-    fitted to it learns that demand stops rising in a heatwave.
-    """
-    rise = get(cfg, "quality.suppression_temp_rise_c")
-    delta = get(cfg, "quality.suppression_demand_delta_pct")
-    sub = tier_subset(df, tier).sort_values(["zone", "datetime_utc"]).copy()
-    g = sub.groupby("zone", observed=True)
-    sub["temp_delta"] = g["temperature_2m"].diff()
-    sub["demand_delta_pct"] = g["demand_mw"].pct_change() * 100.0
-    sub["contiguous"] = g["datetime_utc"].diff() == pd.Timedelta(hours=1)
-    flagged = sub[sub["contiguous"]
-                  & (sub["temp_delta"] >= rise)
-                  & (sub["demand_delta_pct"] <= delta)].copy()
-    summary = (flagged.groupby("zone", observed=True)
-               .agg(flagged_hours=("demand_mw", "size"),
-                    median_temp_c=("temperature_2m", "median"),
-                    max_temp_c=("temperature_2m", "max"))
-               .reset_index())
-    eligible = sub[sub["contiguous"]].groupby("zone", observed=True).size().rename("eligible_hours")
-    summary = summary.merge(eligible, on="zone", how="left")
-    summary["flagged_pct"] = (summary["flagged_hours"] / summary["eligible_hours"] * 100).round(2)
-    return summary, flagged
 
 
 # --------------------------------------------------------------------------
@@ -822,22 +790,6 @@ def make_plots(df: pd.DataFrame, cfg: dict, tier: str, out_dir: pathlib.Path) ->
     plt.close(fig)
     written.append(p.name)
 
-    # 5. Suppression candidates against the temperature they occur at
-    _, flagged = suppression_candidates(df, cfg, tier)
-    fig, ax = plt.subplots(figsize=(9, 4.5))
-    if len(flagged):
-        ax.hist([tier_subset(df, tier)["temperature_2m"], flagged["temperature_2m"]],
-                bins=40, label=["all hours", "flagged"], density=True)
-    ax.set_xlabel("temperature (C)")
-    ax.set_ylabel("density")
-    ax.set_title(f"Suppressed-demand candidates vs all hours — tier: {tier}")
-    ax.legend(fontsize=8)
-    ax.grid(alpha=.25)
-    fig.tight_layout()
-    p = out_dir / "suppression.png"
-    fig.savefig(p, dpi=130)
-    plt.close(fig)
-    written.append(p.name)
     return written
 
 
@@ -947,7 +899,6 @@ def main() -> None:
                        for tr in ("measured", "measured+MODE")], ignore_index=True)
     bands = band_occupancy(df, cfg, tier)
     bands_zone = band_occupancy_by_zone(df, cfg, tier)
-    supp, _ = suppression_candidates(df, cfg, tier)
     growth = growth_rates(df, tier)
     hol = holiday_effect(df, tier)
     plots = make_plots(df, cfg, tier, figures)
@@ -1243,17 +1194,6 @@ matters most — this is the measurement of how little evidence there is to be
 reliable on. A second weather point per zone, already a Phase 2 candidate in 5e,
 is the direct remedy.*
 
-## Suppressed-demand candidates — `quality.suppression_*`
-
-Hours where temperature rose by at least
-`{get(cfg, "quality.suppression_temp_rise_c")} C` on the hour while demand
-changed by no more than `{get(cfg, "quality.suppression_demand_delta_pct")}%`.
-5f principle 2: the source reports power consumed, not power wanted, so a
-load-shedding hour records a supply ceiling and a model fitted to it learns
-that demand stops rising in a heatwave.
-
-{md_table(supp)}
-
 ## Demand growth — assumed ~5%/year in 5c
 
 Log-linear trend on annual mean demand, near-complete years only.
@@ -1274,7 +1214,7 @@ would measure nothing.
 {chr(10).join(f"- `figures/{p}`" for p in plots)}
 """
     reports.mkdir(parents=True, exist_ok=True)
-    (reports / "step0_measurements.md").write_text(doc)
+    (reports / "step0_measurements.md").write_text(doc, encoding="utf-8")
     log.info("wrote reports/step0_measurements.md and %d figures", len(plots))
 
 

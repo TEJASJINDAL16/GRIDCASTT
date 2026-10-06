@@ -47,6 +47,18 @@ REQUIRED_KEYS = [
     "splits.purge_gap_days",
     "splits.walk_forward_folds",
     "splits.holdout_months",
+    "splits.tuning_window_months",
+    "splits.min_initial_train_months",
+    "splits.early_stopping_weeks",
+    "forecast_noise.enabled",
+    "forecast_noise.day_bias_sigma_c",
+    "forecast_noise.hour_wobble_sigma_c",
+    "baselines.ridge_alpha",
+    "baselines.per_zone_model",
+    "backtest.issue_hour_ist",
+    "backtest.report_path",
+    "backtest.results_dir",
+    "backtest.predictions_path",
     "train.target_transform",
     "train.seed",
     "evaluate.baseline",
@@ -103,7 +115,7 @@ def load_config(path: pathlib.Path | None = None, check: bool = True) -> dict:
     config_path = path or CONFIG_PATH
     if not config_path.exists():
         raise ConfigError(f"config file not found: {config_path}")
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     if not isinstance(cfg, dict):
         raise ConfigError(f"config file did not parse to a mapping: {config_path}")
@@ -124,7 +136,7 @@ def get_api_key(name: str = "EM_API_KEY") -> str:
 
     env_path = PROJECT_ROOT / ".env"
     if env_path.exists():
-        for line in env_path.read_text().splitlines():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue

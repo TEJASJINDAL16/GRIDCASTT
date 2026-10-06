@@ -330,23 +330,6 @@ matters most — this is the measurement of how little evidence there is to be
 reliable on. A second weather point per zone, already a Phase 2 candidate in 5e,
 is the direct remedy.*
 
-## Suppressed-demand candidates — `quality.suppression_*`
-
-Hours where temperature rose by at least
-`1.0 C` on the hour while demand
-changed by no more than `0.0%`.
-5f principle 2: the source reports power consumed, not power wanted, so a
-load-shedding hour records a supply ceiling and a model fitted to it learns
-that demand stops rising in a heatwave.
-
-| zone   |   flagged_hours |   median_temp_c |   max_temp_c |   eligible_hours |   flagged_pct |
-|:-------|----------------:|----------------:|-------------:|-----------------:|--------------:|
-| IN-EA  |            5612 |           28.5  |         41.9 |            49359 |         11.37 |
-| IN-NE  |            5013 |           25.2  |         39.1 |            49347 |         10.16 |
-| IN-NO  |            4723 |           27.9  |         44.8 |            58165 |          8.12 |
-| IN-SO  |            4104 |           26.8  |         38.7 |            58165 |          7.06 |
-| IN-WE  |            1830 |           29.25 |         39.8 |            58165 |          3.15 |
-
 ## Demand growth — assumed ~5%/year in 5c
 
 Log-linear trend on annual mean demand, near-complete years only.
@@ -380,4 +363,3 @@ would measure nothing.
 - `figures/elbow_by_zone.png`
 - `figures/band_occupancy.png`
 - `figures/growth.png`
-- `figures/suppression.png`

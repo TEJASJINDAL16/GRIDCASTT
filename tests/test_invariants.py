@@ -41,7 +41,7 @@ def test_inv1_archive_and_forecast_are_separate_functions():
 
 def test_inv1_neither_weather_fetcher_calls_the_other():
     """One delegating to the other would collapse the structural separation."""
-    tree = ast.parse((SRC / "ingest" / "weather.py").read_text())
+    tree = ast.parse((SRC / "ingest" / "weather.py").read_text(encoding="utf-8"))
     fns = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
     for name in ("fetch_archive", "fetch_forecast"):
         called = {
@@ -91,7 +91,7 @@ FORBIDDEN_SPLIT_PATTERNS = [
 def test_inv2_no_random_splitting_anywhere_in_src():
     offenders = []
     for path in _python_sources(SRC):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         for pattern, label in FORBIDDEN_SPLIT_PATTERNS:
             if pattern.search(text):
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}: {label}")
@@ -128,7 +128,7 @@ def test_inv3_inv4_ingest_preserves_the_estimation_flag():
     """The flag has to survive ingest or neither invariant can be enforced."""
     from src.validate import DEMAND_REQUIRED_COLUMNS
     assert "is_estimated" in DEMAND_REQUIRED_COLUMNS
-    source = (SRC / "ingest" / "electricity_maps.py").read_text()
+    source = (SRC / "ingest" / "electricity_maps.py").read_text(encoding="utf-8")
     assert '"is_estimated"' in source and "isEstimated" in source
 
 
@@ -141,9 +141,12 @@ def test_inv5_dashboard_is_configured_to_show_the_baseline(cfg):
     assert cfg["evaluate"]["baseline"] == "seasonal_naive"
 
 
-@pytest.mark.skip(reason="stage 2: needs reports/baseline.md and the metrics module")
 def test_inv5_no_reported_error_figure_lacks_its_baseline():
-    ...
+    from src.backtest.run import REPORT_COLUMNS
+    assert {"n_rows", "baseline_mape_pct", "mase", "rmsse"} <= set(REPORT_COLUMNS)
+    text = (PROJECT_ROOT / "reports/baseline.md").read_text(encoding="utf-8")
+    assert "Number to beat" in text and "seasonal_naive" in text
+    assert "out-of-sample" in text
 
 
 # --------------------------------------------------------------------------
@@ -169,7 +172,7 @@ def test_inv6_no_secret_value_appears_in_any_tracked_file(tracked_files, project
         pytest.skip(".env absent — nothing to leak")
 
     secrets = set()
-    for line in env_path.read_text().splitlines():
+    for line in env_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -182,7 +185,7 @@ def test_inv6_no_secret_value_appears_in_any_tracked_file(tracked_files, project
     offenders = []
     for path in tracked_files:
         try:
-            text = path.read_text(errors="ignore")
+            text = path.read_text(encoding="utf-8", errors="ignore")
         except (OSError, UnicodeDecodeError):
             continue
         if any(s in text for s in secrets):
@@ -199,7 +202,7 @@ def test_inv6_only_config_module_reads_secrets():
     for path in _python_sources(SRC):
         if path.name == "config.py":
             continue
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         if "EM_API_KEY" in text or "getenv" in text or "environ" in text:
             offenders.append(path.relative_to(PROJECT_ROOT).as_posix())
     assert not offenders, f"modules reading the environment directly: {offenders}"
@@ -210,7 +213,7 @@ def test_inv6_no_secret_is_logged_or_printed():
     log line or stdout."""
     offenders = []
     for path in _python_sources(SRC):
-        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if re.search(r"(log\.\w+|print)\s*\(.*\b(key|token|secret|auth)\b", line, re.I):
                 offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{lineno}")
     assert not offenders, f"possible secret in a log or print: {offenders}"
@@ -232,28 +235,42 @@ def test_inv7_tuned_parameters_are_null_until_the_search_runs(cfg):
     assert all(v is None for v in cfg["train"]["lightgbm"].values())
 
 
-@pytest.mark.skip(reason="stage 3: needs scripts/tune.py and the fold boundaries")
-def test_inv7_optuna_never_sees_a_test_fold():
-    ...
+def test_inv7_tuning_boundaries_exclude_every_test_fold(cfg):
+    from src.backtest.splits import make_splits
+    from tests.test_splits import history
+    plan = make_splits(history(cfg), cfg)
+    assert all(plan.tuning_end < fold.test_start for fold in plan.folds)
+    assert plan.tuning_end < plan.holdout_start
 
 
 # --------------------------------------------------------------------------
-# INV-8 — Never train on suppressed-demand hours.
+# INV-8 - Retain eligible observations without guessing their cause.
 # --------------------------------------------------------------------------
 
-def test_inv8_suppression_settings_exist_and_are_exclusions_not_weights(cfg):
-    """5f principle 2: exclude, not downweight. INV-8 admits no partial weight."""
-    quality = cfg["quality"]
-    assert "suppression_temp_rise_c" in quality
-    assert "suppression_demand_delta_pct" in quality
-    assert not any("weight" in k for k in quality), (
-        "a suppression weight would be a partial exclusion, which INV-8 forbids"
-    )
+def test_inv8_hot_sustained_demand_drop_remains_trainable(cfg):
+    import copy
 
+    import pandas as pd
 
-@pytest.mark.skip(reason="stage 2: needs src/features/quality.py")
-def test_inv8_suppressed_hours_are_excluded_from_training():
-    ...
+    from src.features.build import trainable_mask
+
+    local = copy.deepcopy(cfg)
+    local["quality"]["trainable_from"] = {}
+    frame = pd.DataFrame({
+        "datetime_utc": pd.date_range("2024-01-01", periods=6, freq="h", tz="UTC"),
+        "zone": "IN-NO",
+        "temperature": [46., 47., 48., 48., 48., 49.],
+        "demand_mw": [10000., 10000., 5000., 5000., 5000., 5000.],
+        "is_estimated": False,
+        "estimation_method": None,
+    })
+    assert trainable_mask(frame, local).all()
+    assert "suppression" not in local["quality"]
+    frame.loc[0, "demand_mw"] = 0.
+    frame.loc[1, "demand_mw"] = float("nan")
+    frame.loc[2, "is_estimated"] = True
+    frame.loc[2, "estimation_method"] = "TIME_SLICER_AVERAGE"
+    assert trainable_mask(frame, local).tolist() == [False, False, False, True, True, True]
 
 
 # --------------------------------------------------------------------------
@@ -265,7 +282,7 @@ def test_inv9_there_is_at_most_one_feature_builder():
     """Two modules defining build_features is how train/serve skew begins."""
     definers = []
     for path in _python_sources(SRC):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name == "build_features":
                 definers.append(path.relative_to(PROJECT_ROOT).as_posix())
@@ -283,3 +300,71 @@ def test_inv9_training_and_serving_emit_identical_columns():
     assert callable(build_features) and callable(feature_matrix)
     assert FEATURE_COLUMNS, "the feature contract must not be empty"
     assert (SRC / "features" / "build.py").exists()
+
+
+# --------------------------------------------------------------------------
+# INV-1, extended: a THIRD weather fetcher exists, and it is on the forecast
+# side of the leakage line despite taking a date range like the archive does.
+# --------------------------------------------------------------------------
+
+def test_inv1_three_weather_fetchers_are_all_distinct():
+    from src.ingest.weather import fetch_archive, fetch_forecast, fetch_previous_runs
+    assert len({fetch_archive, fetch_forecast, fetch_previous_runs}) == 3
+
+
+def test_inv1_previous_runs_does_not_call_the_archive():
+    """It answers "what did we believe then", not "what happened then". If it
+    delegated to fetch_archive it would be returning actuals under a name that
+    says forecast — leakage with the right column name."""
+    tree = ast.parse((SRC / "ingest" / "weather.py").read_text(encoding="utf-8"))
+    fns = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    called = {
+        n.func.id for n in ast.walk(fns["fetch_previous_runs"])
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+    }
+    assert "fetch_archive" not in called
+    assert "fetch_forecast" not in called
+
+
+def test_inv1_previous_runs_uses_a_distinct_endpoint(cfg):
+    urls = {cfg["weather"]["archive_url"],
+            cfg["weather"]["forecast_url"],
+            cfg["weather"]["previous_runs_url"],
+            cfg["weather"]["historical_forecast_url"]}
+    assert len(urls) == 4, "each weather source must have its own endpoint"
+
+
+def test_inv1_recovered_vintages_exclude_nowcast_leads(cfg, project_root):
+    """lead_days == 0 is the provider's best current estimate for a past hour —
+    an analysis, not a forecast. Including it is the same INV-1 mistake as the
+    negative lead_time rows in the captured archive (5d)."""
+    import glob
+
+    import pandas as pd
+    files = glob.glob(str(project_root / cfg["archive"]["recovered_vintage_dir"]
+                          / "recovered_*.parquet"))
+    if not files:
+        pytest.skip("no recovered vintages on disk")
+    for path in files:
+        leads = pd.read_parquet(path, columns=["lead_days"])["lead_days"]
+        assert leads.min() >= 1, f"{path} contains lead_days < 1"
+
+
+def test_recovered_vintages_are_kept_apart_from_captured(cfg):
+    """Different provenance, unknown issue time within the day, shorter
+    horizon. 5d's point-in-time-correctness claim rests on the captured set."""
+    assert (cfg["archive"]["recovered_vintage_dir"]
+            != cfg["archive"]["vintage_dir"])
+
+
+def test_recovered_vintages_declare_their_source(cfg, project_root):
+    import glob
+
+    import pandas as pd
+    files = glob.glob(str(project_root / cfg["archive"]["recovered_vintage_dir"]
+                          / "recovered_*.parquet"))
+    if not files:
+        pytest.skip("no recovered vintages on disk")
+    df = pd.read_parquet(files[0], columns=["source"])
+    assert df["source"].nunique() == 1
+    assert "previous_runs" in df["source"].iloc[0]

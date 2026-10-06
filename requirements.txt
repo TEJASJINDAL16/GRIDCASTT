@@ -1,11 +1,11 @@
-# gridcast dependencies — exact pins.
+# gridcast dependencies - exact pins.
 #
 # Exact, not floors. The environment is one of the five pins in PLANNING 14:
 # a model is explained by code plus data plus settings plus environment, and
 # ">=2.31" pins nothing. The Docker image digest is the authoritative pin;
 # this file is what makes the image reproducible.
 #
-# Python 3.12. Do not build the venv from bare `python3` — see the Makefile.
+# Python 3.12. Do not build the venv from bare `python3` - see the Makefile.
 
 # --- ingest ---
 requests==2.34.2
@@ -30,13 +30,13 @@ matplotlib==3.11.1
 tabulate==0.10.0          # pandas .to_markdown()
 
 # --- MLOps (PLANNING 14) ---
-# dvc[gdrive] — the gdrive extra is required; plain dvc cannot talk to the
+# dvc[gdrive] - the gdrive extra is required; plain dvc cannot talk to the
 # remote and fails with an unsupported-URL error.
 dvc==3.67.1
 dvc-gdrive==3.0.1
 # The gdrive stack does not resolve to a working set on its own. Left alone,
 # pip installs pyOpenSSL 22.0.0 against cryptography 50, and every `dvc push`
-# dies with "module 'lib' has no attribute 'GEN_EMAIL'" — GEN_EMAIL was
+# dies with "module 'lib' has no attribute 'GEN_EMAIL'" - GEN_EMAIL was
 # removed from cryptography's bindings and old pyOpenSSL still references it.
 # The constraint chain that does resolve:
 #   pydrive2  requires pyOpenSSL <= 24.2.1
