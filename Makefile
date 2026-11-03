@@ -13,7 +13,8 @@ IMAGE  := gridcast
 UNAME  := $(shell uname -s)
 
 .PHONY: help setup deps check-libomp weather em backfill backfill-weather \
-        archive backfill-vintages measure baseline test docker docker-test clean
+        archive backfill-vintages measure baseline test docker docker-test clean \
+        tune model ablate calibrate train daily retry report model-card holdout audit catch-up replay diagnose-linear
 
 help:  ## Show available targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*##"};{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -67,6 +68,9 @@ archive: setup  ## Archive a weather forecast vintage and a demand-revision snap
 backfill-vintages: setup  ## Recover past forecast vintages (leads 1-7, 2022+)
 	$(PY) scripts/backfill_vintages.py $(ARGS)
 
+catch-up:  ## Merge a missing demand/weather range (ARGS="--start YYYY-MM-DD")
+	$(PY) scripts/catch_up.py $(ARGS)
+
 # --- analysis ------------------------------------------------------------
 
 measure: setup  ## Step-0 measurements -> reports/step0_measurements.md
@@ -74,6 +78,45 @@ measure: setup  ## Step-0 measurements -> reports/step0_measurements.md
 
 baseline: setup  ## Score four baselines on twelve monthly folds (cached data only)
 	$(PY) scripts/backtest_baselines.py
+
+tune:  ## Select model parameters on measured pre-test targets
+	$(PY) scripts/tune.py
+
+model:  ## Evaluate the frozen hybrid against all four baselines
+	$(PY) scripts/backtest_model.py
+
+ablate:  ## Measure feature and estimation-policy contributions
+	$(PY) scripts/ablate.py
+
+diagnose-linear:  ## Check linear zone composition on reserved validation only
+	$(PY) scripts/diagnose_linear.py
+
+calibrate:  ## Derive fixed trigger thresholds and promotion tolerances
+	$(PY) scripts/calibrate.py
+
+replay:  ## Exercise routing, promotion and cooldown on recorded rows
+	$(PY) scripts/replay.py
+
+train:  ## Initialize an approved champion, or retain a rejected candidate
+	$(PY) scripts/train.py
+
+daily:  ## Run the complete daily forecast job
+	$(PY) scripts/daily.py $(ARGS)
+
+retry:  ## Make one weather retry when eligible
+	$(PY) scripts/daily.py --retry $(ARGS)
+
+report:  ## Render the static dashboard
+	$(PY) scripts/report.py
+
+model-card:  ## Generate the evidence-based model card
+	$(PY) scripts/model_card.py
+
+holdout:  ## Evaluate the reserved final period once
+	$(PY) scripts/holdout.py
+
+audit:  ## Check requirements against recorded evidence
+	$(PY) scripts/audit.py
 
 # --- checks --------------------------------------------------------------
 

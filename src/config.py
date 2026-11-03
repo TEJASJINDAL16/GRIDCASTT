@@ -68,6 +68,20 @@ REQUIRED_KEYS = [
     "drift.rolling_window_days",
     "failure.min_zones_to_publish",
     "dashboard.output_dir",
+    "runtime.threads",
+    "runtime.max_boost_rounds",
+    "runtime.early_stopping_rounds",
+    "runtime.model_path",
+    "runtime.model_metadata",
+    "runtime.forecast_dir",
+    "runtime.score_dir",
+    "runtime.image_digest",
+    "runtime.min_settled_fraction",
+    "runtime.threshold_steps",
+    "runtime.debounce_candidates",
+    "failure.retry_window_hours",
+    "failure.max_consecutive_failures",
+    "failure.max_forecast_vintage_age_hours",
 ]
 
 
@@ -149,3 +163,28 @@ def get_api_key(name: str = "EM_API_KEY") -> str:
     raise RuntimeError(
         f"{name} not found. Copy .env.example to .env and add your key."
     )
+
+
+def update_values(values: dict, path: pathlib.Path = CONFIG_PATH) -> None:
+    """Replace existing YAML values by parser locations, retaining comments."""
+    source = path.read_text(encoding="utf-8")
+    root = yaml.compose(source)
+    edits = []
+    for dotted, value in values.items():
+        node = root
+        for part in dotted.split("."):
+            node = next(v for k, v in node.value if k.value == part)
+        rendered = yaml.safe_dump(value, default_flow_style=True).strip().removesuffix("...").strip()
+        if isinstance(node, (yaml.MappingNode, yaml.SequenceNode)):
+            original = source[node.start_mark.index:node.end_mark.index]
+            rendered += original[len(original.rstrip()):]
+        edits.append((node.start_mark.index, node.end_mark.index, rendered))
+    for start, end, rendered in sorted(edits, reverse=True):
+        source = source[:start] + rendered + source[end:]
+    path.write_text(source, encoding="utf-8")
+
+
+def configure_tracking() -> None:
+    """Explicitly enable the specified local file store in MLflow 3.16."""
+    os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
+    os.environ["MLFLOW_DISABLE_AGENT_HINT"] = "1"

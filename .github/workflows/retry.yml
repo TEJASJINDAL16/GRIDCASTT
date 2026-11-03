@@ -1,0 +1,13 @@
+name: retry
+on:
+  schedule:
+    - cron: "*/15 * * * *" # one attempt; application enforces the four-hour window
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  retry:
+    uses: ./.github/workflows/daily.yml
+    with:
+      retry: true
+    secrets: inherit

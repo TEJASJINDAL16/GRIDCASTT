@@ -1,0 +1,17 @@
+{
+  "forecast_vintages": {
+    "files": 3,
+    "rows": 9600,
+    "capture_days": 3,
+    "first_capture": "2026-09-08",
+    "latest_capture": "2026-11-03",
+    "positive_lead_rows": 9295
+  },
+  "demand_revisions": {
+    "files": 3,
+    "rows": 10140,
+    "capture_days": 2,
+    "first_capture": "2026-09-13",
+    "latest_capture": "2026-11-03"
+  }
+}

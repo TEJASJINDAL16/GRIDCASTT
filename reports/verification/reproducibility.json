@@ -1,0 +1,30 @@
+{
+  "platforms": [
+    "macOS Python 3.12",
+    "pinned Linux container Python 3.12"
+  ],
+  "folds": 12,
+  "models": 5,
+  "comparison_rows": 60,
+  "metrics": [
+    "mape_pct",
+    "mase",
+    "rmsse",
+    "signed_bias_pct",
+    "shortfall_freq_pct",
+    "p95_abs_pct"
+  ],
+  "rounding_decimals": 3,
+  "all_metrics_match": true,
+  "maximum_absolute_differences": {
+    "mape_pct": 9.237055564881302e-13,
+    "mase": 3.8191672047105385e-14,
+    "rmsse": 4.973799150320701e-14,
+    "signed_bias_pct": 2.2648549702353193e-12,
+    "shortfall_freq_pct": 0.0,
+    "p95_abs_pct": 7.844391802791506e-12
+  },
+  "promotion_decision_matches": true,
+  "promotion_approved": false,
+  "source_mode": "Current source mounted read-only into the immutable local environment image. GHCR publication remains pending."
+}

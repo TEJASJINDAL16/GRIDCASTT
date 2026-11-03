@@ -2,7 +2,11 @@
 .venv
 .dvc/cache
 .dvc/tmp
+.dvc/config.local
 .env
+.env.*
+models/*.joblib
+reports/tuning/*.sqlite3*
 data/raw/*
 data/interim/*
 !data/raw/.gitkeep

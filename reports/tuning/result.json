@@ -1,0 +1,36 @@
+{
+  "protocol": "measured validation before first fold; earliest reserved year has no measured targets",
+  "validation_start": "2024-05-21 04:30:00+00:00",
+  "validation_end": "2024-08-21 04:30:00+00:00",
+  "train_end": "2024-05-10 04:30:00+00:00",
+  "zones": [
+    "IN-EA"
+  ],
+  "n_rows": 2184,
+  "first_trial_seconds": 22.39369683386758,
+  "trial_limit": 100,
+  "trials_completed": 100,
+  "seconds": 2709.4211098751985,
+  "best_mase": 0.8997038661752287,
+  "selected": {
+    "recency_half_life_days": 320,
+    "temp_breakpoint_c": 25.089110817654692,
+    "alpha": 0.14657299440820595,
+    "num_leaves": 44,
+    "learning_rate": 0.02236699048967922,
+    "min_data_in_leaf": 57,
+    "feature_fraction": 0.7124017792735836,
+    "bagging_fraction": 0.9846291327811688,
+    "lambda_l1": 0.07490877401405181,
+    "lambda_l2": 0.02677706893676713
+  },
+  "bound_parameters": [],
+  "iteration_convergence_correction": {
+    "original_ceiling": 1000,
+    "corrected_ceiling": 5000,
+    "selected_best_iteration": 1456,
+    "selected_validation_mase_after_convergence": 0.902436560623064,
+    "hyperparameters_unchanged": true,
+    "reason": "Original winner hit the iteration ceiling. Ceiling widened using reserved validation only; boundary fits now fail."
+  }
+}

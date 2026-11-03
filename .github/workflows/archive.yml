@@ -12,9 +12,8 @@
 name: archive
 
 on:
+  # Keep capture alive until the daily workflow can take over safely.
   schedule:
-    # Cron is UTC (PLANNING 14). 04:30 UTC = 10:00 IST, the issue time, so the
-    # vintage archived is the one a forecast issued today would have used.
     - cron: "30 4 * * *"
   workflow_dispatch:
 
@@ -36,11 +35,32 @@ env:
 concurrency:
   # Schedulers occasionally fire twice. Serialise rather than race two runs
   # writing the same day's archive.
-  group: archive
+  group: gridcast-state
   cancel-in-progress: false
 
 jobs:
+  eligible:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          image=$(python scripts/deployment_ready.py)
+          if [ -z "$image" ] || [ "$EVENT" = workflow_dispatch ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
   archive:
+    needs: eligible
+    if: needs.eligible.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -57,6 +77,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Configure the DVC remote
+        id: configure
+        continue-on-error: true
         # The personal OAuth client lives in .dvc/config.local, which is
         # gitignored under INV-6, so the runner has no copy of it. Without
         # these, DVC falls back to its shared OAuth app - which is throttled
@@ -68,10 +90,16 @@ jobs:
           GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
           GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
         run: |
+          if [ -z "$GDRIVE_CLIENT_ID" ] || [ -z "$GDRIVE_CLIENT_SECRET" ]; then
+            echo "::error::Required repository secrets GDRIVE_CLIENT_ID and GDRIVE_CLIENT_SECRET must both be configured."
+            exit 1
+          fi
           dvc remote modify --local gdrive gdrive_client_id "$GDRIVE_CLIENT_ID"
           dvc remote modify --local gdrive gdrive_client_secret "$GDRIVE_CLIENT_SECRET"
 
       - name: Pull existing archives
+        id: restore
+        if: steps.configure.outcome == 'success'
         # Needed so the revision diff compares against everything already
         # known, not just what this runner happens to have.
         env:
@@ -81,11 +109,13 @@ jobs:
         # five days. A first run legitimately has nothing to pull, so only
         # that case is tolerated - and it is reported either way.
         run: |
-          if dvc pull --allow-missing; then
+          if dvc pull; then
             echo "pull ok"
+            echo "restored=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::dvc pull failed - continuing, but the revision"\
                  "baseline may be incomplete and the remote may be misconfigured"
+            echo "restored=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Archive vintages, observed weather and demand revisions
@@ -103,12 +133,16 @@ jobs:
         # collect must reach the remote first. Without this, five days of
         # successfully archived vintages were discarded because an unrelated
         # part of the same script raised.
-        if: always()
+        if: always() && steps.restore.outputs.restored == 'true'
+        id: persist
         env:
           GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
         run: |
           for d in data/raw/forecast_vintages data/raw/demand_revisions; do
             if [ -d "$d" ]; then dvc add "$d"; else echo "skip $d (absent)"; fi
+          done
+          for f in data/raw/weather_*.parquet; do
+            if [ -f "$f" ]; then dvc add "$f"; fi
           done
           dvc push
 
@@ -119,10 +153,30 @@ jobs:
           git config user.email "noreply@github.com"
           # data/raw/.gitignore, not data/.gitignore - DVC writes its generated
           # entry beside the tracked path, and the old glob staged nothing.
-          git add state/ data/raw/*.dvc data/raw/.gitignore 2>/dev/null || true
+          git add state/
+          if [ "${{ steps.persist.outcome }}" = success ]; then
+            git add data/raw/*.dvc data/raw/.gitignore
+          fi
           if git diff --cached --quiet; then
             echo "nothing to commit"
           else
             git commit -m "archive: $(date -u +%Y-%m-%d) vintage and revisions"
             git push
           fi
+
+      - name: Preserve capture when remote persistence fails
+        if: always() && steps.persist.outcome != 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unpersisted-archive
+          path: |
+            state/runs
+            data/raw/forecast_vintages
+            data/raw/demand_revisions
+            data/raw/weather_*.parquet
+
+      - name: Signal unsuccessful persistence
+        if: always() && steps.persist.outcome != 'success'
+        run: |
+          echo "::error::Capture was retained as an artifact; remote persistence did not complete."
+          exit 1

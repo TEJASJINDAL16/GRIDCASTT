@@ -4,8 +4,10 @@ Day-ahead electricity demand forecasting for the Indian grid — hourly, for all
 five regional zones, with a model that keeps itself current and refuses an
 update that would make it worse.
 
-> **Status: under construction.** Stage 2's feature and baseline implementation
-> is built locally; the production model is next. The build order, what "done"
+> **Status: implementation and verification in progress.** The hybrid model,
+> monitoring, guarded retraining, batch job and dashboard are implemented locally.
+> [The completion audit](reports/completion.md) records which evidence and
+> deployment gates have actually passed. The build order, what "done"
 > means at each stage, and what is deliberately not built yet are in
 > [BUILD_STAGES.md](BUILD_STAGES.md). The specification is
 > [PLANNING.md](PLANNING.md).
@@ -13,6 +15,11 @@ update that would make it worse.
 > The twelve-fold baseline comparison, coverage limits and remaining assumptions
 > are in [reports/baseline.md](reports/baseline.md). Reproduce it with `make baseline`.
 > Eligible observations are retained without speculative cause-based filtering.
+>
+> **Current measured blocker:** the corrected hybrid fails the development gate
+> (mean-fold MASE 1.250, seasonal baseline 1.000). It remains unapproved for deployment.
+> See [the gate report](reports/model_gate_status.md). The final holdout remains
+> reserved while the required ablations establish the next development decision.
 
 ---
 
@@ -43,7 +50,7 @@ point.
 | Issue time | 10:00 IST, so lead time is 14–38 hours |
 | Method | direct multi-step — every target hour predicted independently, never recursively |
 
-## Planned Architecture
+## Architecture
 
 One pooled model across all five zones, with `zone` as a native categorical
 feature. Trained on `log(demand)`, which makes a 10% swing the same size in
@@ -160,3 +167,65 @@ The Electricity Maps academic licence expires 2027-03-04. History is pulled
 once and cached to disk early, and every downstream step reads the cache — so
 training data, backtests and every published figure survive the key lapsing.
 Only the live daily update depends on the API remaining available.
+
+## Run the pipeline
+
+After restoring the DVC data and running `make setup`, the research sequence is:
+
+```bash
+make tune        # reserved pre-test measured validation; two-hour budget
+make model       # frozen twelve-fold comparison
+make ablate      # feature removals and estimation-tier comparisons
+make calibrate   # alarm-budget sweep, injected-drift delay, promotion gate
+make report      # dashboard; pending values remain pending
+make holdout     # final evaluation once; refuses a second run
+make train       # saves a champion only if the selection gate passed
+make model-card
+make audit
+```
+
+`make daily` captures weather and demand, freezes newly settled scores, monitors,
+attempts a gated retrain when warranted, forecasts the next day and publishes
+the dashboard. `make retry` performs one eligible weather retry. Neither loops
+or sleeps. `make daily ARGS="--offline --at 2026-11-04T04:30:00Z"` uses cached
+vintages; it cannot invent a forecast for a date absent from that archive.
+
+Keep the frozen research input snapshots when reproducing the reports. The
+initial data-derived boundaries are saved in `reports/research_protocol.json`;
+later cache refreshes cannot silently move the holdout. `make catch-up ARGS="--start YYYY-MM-DD"`
+repairs a missing range by merging it, preserving old
+history and recording the actual retrieval time.
+
+## Deployment and recovery
+
+The archive retains its 04:30 UTC schedule until an approved champion records a
+published GHCR image reference in `pins.image_digest`. The image workflow tests
+the image before publishing it and emits the immutable reference as an artifact.
+Set `runtime.image_digest` to that full `ghcr.io/...@sha256:...` reference before
+fitting the release artifact. The daily workflow then uses that exact image;
+the archive becomes a manual repair path. GitHub Pages must serve `main:/docs`.
+
+Both workflows require the four secrets documented in BUILD_STAGES: the
+Electricity Maps key and the three Google Drive OAuth values. Authentication is
+consumed through the normal configuration/DVC paths, never printed. A Drive
+`invalid_grant` requires renewed owner authentication; retrying expired
+credentials does not repair it. A failed remote upload must not publish new DVC
+pointers. Retry and failure records remain separate from successful forecasts.
+
+The live acceptance gate is three actual consecutive successful daily runs,
+durable DVC backups, a published container and a working public dashboard.
+Offline tests and replay do not substitute for those checks. Later quantile and
+regional-model experiments remain gated on a working Phase 1 service.
+
+## Tools deliberately omitted
+
+| Tool | Reason |
+|---|---|
+| Airflow / Prefect | One linear daily batch does not need a scheduler database. |
+| Kubernetes | There is no continuously running service to orchestrate. |
+| Feast | One shared feature builder supplies the training/serving contract. |
+| Prometheus / Grafana | Daily records and charts cover this monitoring cadence. |
+| FastAPI model server | Forecasts are generated in a batch; there is no request API. |
+| Hosted MLflow / Postgres | The local file store is sufficient for single-writer jobs. |
+| Great Expectations | Direct validators enforce the small, explicit data contract. |
+| Paid cloud | GitHub Actions, Pages and the configured Drive remote cover Phase 1. |

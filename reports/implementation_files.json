@@ -1,0 +1,314 @@
+[
+  {
+    "path": ".dockerignore",
+    "action": "modify",
+    "description": "Exclude local credentials, model binaries and experiment databases from image context.",
+    "sha256": "7b38a384c65e69405b41205de1ac539b5cb39be0276568631f827a7f08d64a7f"
+  },
+  {
+    "path": ".github/workflows/archive.yml",
+    "action": "modify",
+    "description": "Retain scheduled capture until safe handover; preserve captures on remote failure; strict restore and conditional pointer publication.",
+    "sha256": "f11a58c86fe077086af36c589e6350b0991ab84ef1f9bb0c4c0d7c321fba9501"
+  },
+  {
+    "path": ".github/workflows/daily.yml",
+    "action": "create",
+    "description": "Run the seven-step job in a pinned published image with durable-state and capture fallbacks.",
+    "sha256": "afdb883749a05a6f2e33f6265a20af3d17a6ff7db1385132e400d61ba5f6513b"
+  },
+  {
+    "path": ".github/workflows/image.yml",
+    "action": "create",
+    "description": "Test an image before GHCR publication and emit its immutable reference.",
+    "sha256": "47a72656ab84cd261941a8875ed977fc9f0a1a32b3701b3a7c046d6be1171bae"
+  },
+  {
+    "path": ".github/workflows/retry.yml",
+    "action": "create",
+    "description": "Schedule eligible weather retries through the shared workflow.",
+    "sha256": "34560cca5665a153aeb4c44c6ec15414fc9798c91cdefdd37194490b6d366b03"
+  },
+  {
+    "path": ".gitignore",
+    "action": "modify",
+    "description": "Ignore temporary locks/databases and DVC-managed MLflow output.",
+    "sha256": "ce936ccaf6b9cc01d78fdf8185105b696d584bd94f6393ebc96e6be8232c017c"
+  },
+  {
+    "path": "Makefile",
+    "action": "modify",
+    "description": "Expose every research, daily, repair, report and verification entry point.",
+    "sha256": "275da4408f8e0b89d6998d83df930f637d9ac5a1ce2a862eddb1bdef11858e28"
+  },
+  {
+    "path": "PLANNING.md",
+    "action": "modify",
+    "description": "Record autonomous completion authorization and the measured pre-test tuning amendment.",
+    "sha256": "29018bde5185d62d648f0bb8b0d66234478af7d74cf0517ae7efb62c0d7d1233"
+  },
+  {
+    "path": "README.md",
+    "action": "modify",
+    "description": "Describe delivered components, measured failed gate, recovery steps, frozen research dates and rejected tools.",
+    "sha256": "d3535fe44aa0359f347f89d605bb234b4bfe94c021d3d64b100b4b7f538c3b41"
+  },
+  {
+    "path": "config/config.yaml",
+    "action": "modify",
+    "description": "Freeze measured tuning parameters, convergence settings and replay-derived monitor/veto values; retain explicit assumptions.",
+    "sha256": "89287cdc96fd4a6091921d37cac3a2b315e4a791b14328eafcccab7a95b48be6"
+  },
+  {
+    "path": "data/external/festivals_in.csv",
+    "action": "modify",
+    "description": "Add verified 2024/2025 West Bengal festival dates; preserve unverified-year gaps.",
+    "sha256": "b8ed4301264f63bf8883368153c2961031fcad38a1807a3d11d8c01f11f7967c"
+  },
+  {
+    "path": "scripts/ablate.py",
+    "action": "create",
+    "description": "Measure all feature removals, seasonal candidate and estimation-policy comparisons with row counts.",
+    "sha256": "d391efd450ed0524f545585ed09a2e8771b8257c0a112bf7e2c7cdf181be1334"
+  },
+  {
+    "path": "scripts/archive_daily.py",
+    "action": "modify",
+    "description": "Use the reusable capture module and retain the existing archive CLI/status contract.",
+    "sha256": "125a317f399fa8a7caf4bb56a716800182b8940292c03f97a8d8ec46cfff5659"
+  },
+  {
+    "path": "scripts/audit.py",
+    "action": "create",
+    "description": "Report evidence-backed completion and leave unmet quality/deployment gates false.",
+    "sha256": "e28f6ab229326ad89e7d2538a8952f53b39e1f50f14ac0d5e910c129bdaaa08b"
+  },
+  {
+    "path": "scripts/backtest_baselines.py",
+    "action": "modify",
+    "description": "Reuse protected research dates for the four-comparator benchmark.",
+    "sha256": "6f72037a9f9231d6031fb6cd24ede5273002f82ad1965412dd9c834b5cce8be0"
+  },
+  {
+    "path": "scripts/backtest_model.py",
+    "action": "create",
+    "description": "Run frozen research comparison and write explicit selection/veto evidence.",
+    "sha256": "d3384edb987c562ce49525989f57dbbc5b62955ecde7efa98deabc6d5486a791"
+  },
+  {
+    "path": "scripts/calibrate.py",
+    "action": "create",
+    "description": "Sweep episode budgets and genuine detection delays; keep champion watches separate and reject boundary selections.",
+    "sha256": "7ba5eea01634ad1bdc0e21a4eee6fc41792553c5518d3a749e3f2faf2f5705ec"
+  },
+  {
+    "path": "scripts/catch_up.py",
+    "action": "create",
+    "description": "Merge a missing data range without discarding old history; retain actual retrieval timestamps.",
+    "sha256": "aec10795260e1510158e551d95042a3b01ee528ff054424460d42062a0f88bc4"
+  },
+  {
+    "path": "scripts/daily.py",
+    "action": "create",
+    "description": "Expose the daily/retry/offline command and propagate failures.",
+    "sha256": "fc05ffd05c0aa7cc77068fa4771ed9ac78c4c2a18b295ad8f9b5f708ffbf18c4"
+  },
+  {
+    "path": "scripts/deployment_ready.py",
+    "action": "create",
+    "description": "Keep capture active until an approved champion has a valid published image pin.",
+    "sha256": "2cb2cea25bc372fa2b4ebdaa442df4a228cdb153e6f737409f95dbd659aae517"
+  },
+  {
+    "path": "scripts/diagnose_linear.py",
+    "action": "create",
+    "description": "Reproduce a reserved-validation zone-centering diagnostic; no production architecture change.",
+    "sha256": "11119aae5fb5bdecff94e76a88c98214641685083884a28aa952254e9017fb0f"
+  },
+  {
+    "path": "scripts/holdout.py",
+    "action": "create",
+    "description": "Refuse failed/incomplete development gates and repeated final evaluation.",
+    "sha256": "283e921f3a55656b888d3846d7a9432a967137ee3ab5058ee3f6bfb0416323a8"
+  },
+  {
+    "path": "scripts/model_card.py",
+    "action": "create",
+    "description": "Publish measured results, per-band limits, actual fitted ranges and remaining assumptions.",
+    "sha256": "e6299ecd2019fad12a79f8e68bd2060d02a65c9ac47c7aef9ba9591f6074ef7c"
+  },
+  {
+    "path": "scripts/replay.py",
+    "action": "create",
+    "description": "Exercise routing, recovery selection and cooldowns on labelled counterfactual real-data replay.",
+    "sha256": "91f5d6e0d01c237b51764ba906ff738bffb9159a2c218da7b10e5f27b914e5ac"
+  },
+  {
+    "path": "scripts/report.py",
+    "action": "create",
+    "description": "Build the static dashboard from stored evidence.",
+    "sha256": "d59fd5abe4aacaf785d7af868692fbe85dd4886727c9bc18aa6db1902dd635a6"
+  },
+  {
+    "path": "scripts/retry_due.py",
+    "action": "create",
+    "description": "Check recorded retry deadlines without installing dependencies.",
+    "sha256": "92af1db97810476f85711e7984aa458d07474a07e51366bd19824dfc38b1ea41"
+  },
+  {
+    "path": "scripts/train.py",
+    "action": "create",
+    "description": "Guard bootstrap against overwriting a champion or using an unevaluated holdout.",
+    "sha256": "7a9b7f22d6ee07034fef8df4658609753d61c009c60aa5c55fa654fcaad0d64b"
+  },
+  {
+    "path": "scripts/tune.py",
+    "action": "create",
+    "description": "Run bounded reserved-window Optuna search, reject boundary winners and save matrix/database snapshots in DVC.",
+    "sha256": "983c4948245e1f439218b742a9e2433eb463edb99566b30aa7e60fe2be88aaec"
+  },
+  {
+    "path": "src/backtest/run.py",
+    "action": "modify",
+    "description": "Compare hybrid with all baselines; save fitted ranges/counts, same-row metrics and fingerprints.",
+    "sha256": "24704828652809dfc85b1902d84223b07cfa93a91a6d54c31736d92635475c05"
+  },
+  {
+    "path": "src/backtest/splits.py",
+    "action": "modify",
+    "description": "Persist initial data-derived research boundaries so cache refreshes cannot move the holdout.",
+    "sha256": "8d88e962a926ba83c58b3613e1f1056db87799a45431b1fd5d5c2c97e7373d4b"
+  },
+  {
+    "path": "src/config.py",
+    "action": "modify",
+    "description": "Validate new required settings, atomically update measured YAML values and configure file-backed tracking.",
+    "sha256": "d7ffca8bc6479f7b3188da8d6951ee2dd044e5ae5da40feac25971919a364066"
+  },
+  {
+    "path": "src/features/build.py",
+    "action": "modify",
+    "description": "Keep the seven-feature contract and support an explicitly disabled seasonal ablation candidate.",
+    "sha256": "68c5ff89f9ac32e8138d41fdba44860821e4a9aa02ce68f67e7fbaa6ee85779b"
+  },
+  {
+    "path": "src/ingest/archive.py",
+    "action": "create",
+    "description": "Share validated, atomic weather/vintage/revision capture and resume after outages.",
+    "sha256": "4f6cda1f15cd2a5714d2c4e4eac59fdb9155f5b364d026a519c375981d5ce31b"
+  },
+  {
+    "path": "src/jobs/daily.py",
+    "action": "create",
+    "description": "Implement locked/idempotent daily flow, frozen scores, late weather context, per-zone routing and retry histories.",
+    "sha256": "6246a1ee0be7ef9d55f87d1013d83b081d3ad5fe779c120b802dfba192999080"
+  },
+  {
+    "path": "src/jobs/train.py",
+    "action": "create",
+    "description": "Validate training matrices, require prospective comparison and a settlement frontier, preserve champion and record every outcome.",
+    "sha256": "730f09be57765e9fe549db6cb3008b05956c0b391aaae20d60abe3e907fbc81d"
+  },
+  {
+    "path": "src/models/hybrid.py",
+    "action": "create",
+    "description": "Implement weighted Ridge plus LightGBM log residuals, smearing, extrapolation and convergence refusal.",
+    "sha256": "bd351cf511c2af50504e1bee2735eba834aa49dd9d0e90862b59765c00042d21"
+  },
+  {
+    "path": "src/monitor/drift.py",
+    "action": "create",
+    "description": "Implement complete-hour windows, per-zone/frontier metrics, evidence-aware routing, structural watches and cooldowns.",
+    "sha256": "1d9db87d648d60a5d72c64e5f99e013945220fcce2f4795c9424e4b219db5be9"
+  },
+  {
+    "path": "src/monitor/registry.py",
+    "action": "create",
+    "description": "Implement common-cohort MASE/RMSSE/veto decisions and measured fold-spread tolerances.",
+    "sha256": "057c24152b8014750b216bc4884e1d9f8327f82211185b9080b59d586cd478cf"
+  },
+  {
+    "path": "src/records.py",
+    "action": "create",
+    "description": "Write atomic evidence, source/data/settings pins and local DVC pointers.",
+    "sha256": "c961eab77682fb238ef8c721e73999d8a9f7e28aef5b1a177b7204815bafffbe"
+  },
+  {
+    "path": "src/tracking.py",
+    "action": "create",
+    "description": "Record local MLflow runs and relocate artifact paths after restoring into another checkout.",
+    "sha256": "3ae6ec37d62587032223a1e45661f2b13f44e41b95ef8a9c2f082e014e04b73d"
+  },
+  {
+    "path": "src/viz/dashboard.py",
+    "action": "create",
+    "description": "Render all dashboard blocks, absent zones, pending actuals, separate stale-input errors and development lead-time evidence.",
+    "sha256": "917e0c6999e2c506750ead9288471b3c2ef5493f21babed02fba858ae15c87a5"
+  },
+  {
+    "path": "src/viz/plots.py",
+    "action": "create",
+    "description": "Share static SVG chart functions with baselines, counts, pending regions and IST axes.",
+    "sha256": "392e63373d432bd46c20c4c0c4c090358e4c2f6215b504d31490d121a6f8ec34"
+  },
+  {
+    "path": "tests/test_calibration.py",
+    "action": "create",
+    "description": "Add regression/invariant coverage for calibration.",
+    "sha256": "20a193d071ace56deeacede41a624102b05472d3e27a67f10369577a0895f03f"
+  },
+  {
+    "path": "tests/test_daily.py",
+    "action": "create",
+    "description": "Add regression/invariant coverage for daily.",
+    "sha256": "8c20285dbd57930f455e5821b0275ed5a8c35805ea3b16e77991eb5a5efe2497"
+  },
+  {
+    "path": "tests/test_forecast_noise.py",
+    "action": "modify",
+    "description": "Check cooling degrees against the tuned breakpoint instead of a hardcoded constant.",
+    "sha256": "540428b6eeabbe3f9608636a7f6889eb0d564794c17d4d44d35a47c6eb31e970"
+  },
+  {
+    "path": "tests/test_hybrid.py",
+    "action": "create",
+    "description": "Add regression/invariant coverage for hybrid.",
+    "sha256": "8623fce96d59bd7f1ca38c281291569e3c643435b19a44f197fd1f0d96dba5cc"
+  },
+  {
+    "path": "tests/test_invariants.py",
+    "action": "modify",
+    "description": "Require study evidence and non-boundary values for frozen parameters.",
+    "sha256": "bb6fce1afcb0ef4721bdd722e8adf4d314a70a53f2b5e239ac1a738495f17211"
+  },
+  {
+    "path": "tests/test_operations.py",
+    "action": "create",
+    "description": "Add regression/invariant coverage for operations.",
+    "sha256": "48a6f06aaedcc1c605cc044f1294d45e25034bcd47d7fd778cf8ecfcc779e1a3"
+  },
+  {
+    "path": "tests/test_splits.py",
+    "action": "modify",
+    "description": "Prevent cache refreshes and implicit configuration edits from moving the reserved research period.",
+    "sha256": "ce873ddac442c7de6da1acc61d537a0ab98f36d3255695287b4a312afe655945"
+  },
+  {
+    "path": "tests/test_tracking.py",
+    "action": "create",
+    "description": "Add regression/invariant coverage for tracking.",
+    "sha256": "f4e47411f56642e15167ff2f06cc78c636626c50052a4b3c074612d7dc1e9550"
+  },
+  {
+    "path": "tests/test_training.py",
+    "action": "create",
+    "description": "Reject invalid matrices, champion overwrites and final-holdout use after a failed development gate.",
+    "sha256": "e9e3b9e2c1ba953fe543199f405433a6560fc0aeb2176645475ed09cd0be3913"
+  },
+  {
+    "path": "tests/test_weather_feats.py",
+    "action": "modify",
+    "description": "Preserve the zero floor below the tuned breakpoint in zone aggregation checks.",
+    "sha256": "7c8ab346e5f4721a880727c5ea4e2bc986383c179fe2f83923af1f8460bbe0a8"
+  }
+]

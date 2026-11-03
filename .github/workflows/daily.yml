@@ -1,0 +1,123 @@
+name: daily
+on:
+  schedule:
+    - cron: "30 4 * * *" # 10:00 IST
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      retry:
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: gridcast-state
+  cancel-in-progress: false
+env:
+  PYTHONUTF8: "1"
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+  MLFLOW_DISABLE_AGENT_HINT: "1"
+jobs:
+  eligible:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+      image: ${{ steps.check.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - id: check
+        env:
+          RETRY: ${{ inputs.retry || false }}
+        run: |
+          image=$(python scripts/deployment_ready.py)
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          if [ -z "$image" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Archive workflow retains capture until an approved champion has a published image pin."
+          elif [ "$RETRY" = true ]; then
+            echo "run=$(python scripts/retry_due.py)" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+  forecast:
+    needs: eligible
+    if: needs.eligible.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.eligible.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure remote
+        id: configure
+        continue-on-error: true
+        env:
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+        run: |
+          if [ -z "$GDRIVE_CLIENT_ID" ] || [ -z "$GDRIVE_CLIENT_SECRET" ]; then
+            echo "::error::Required repository secrets GDRIVE_CLIENT_ID and GDRIVE_CLIENT_SECRET must both be configured."
+            exit 1
+          fi
+          dvc remote modify --local gdrive gdrive_client_id "$GDRIVE_CLIENT_ID"
+          dvc remote modify --local gdrive gdrive_client_secret "$GDRIVE_CLIENT_SECRET"
+      - name: Restore durable state
+        id: restore
+        if: steps.configure.outcome == 'success'
+        continue-on-error: true
+        env:
+          GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+        run: dvc pull
+      - name: Forecast and publish
+        id: forecast
+        env:
+          EM_API_KEY: ${{ secrets.EM_API_KEY }}
+          RETRY: ${{ inputs.retry || false }}
+        run: |
+          if [ "${{ steps.restore.outcome }}" != success ]; then
+            python scripts/archive_daily.py
+            echo "::error::Durable state could not be restored. Capture is preserved as a failure artifact."
+            exit 1
+          elif [ "$RETRY" = true ]; then
+            python scripts/daily.py --retry
+          else
+            python scripts/daily.py
+          fi
+      - name: Persist data before publishing pointers
+        if: always() && steps.forecast.outcome != 'skipped' && steps.restore.outcome == 'success'
+        id: persist
+        env:
+          GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+        run: |
+          for d in data/raw/forecast_vintages data/raw/demand_revisions data/interim/forecasts mlruns; do
+            if [ -d "$d" ]; then dvc add "$d"; fi
+          done
+          for f in data/raw/weather_*.parquet models/*.joblib data/interim/*_training.parquet; do
+            if [ -f "$f" ]; then dvc add "$f"; fi
+          done
+          dvc push
+      - name: Commit durable pointers and dashboard
+        if: always() && steps.persist.outcome == 'success'
+        run: |
+          git config user.name "gridcast-archive[bot]"
+          git config user.email "noreply@github.com"
+          git add state docs models/*.json
+          git add '*.dvc' '**/.gitignore' .gitignore
+          if ! git diff --cached --quiet; then
+            git commit -m "daily: forecasts, settled scores and monitoring"
+            git push
+          fi
+      - name: Preserve failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-failure-records
+          path: |
+            state/runs
+            state/run_attempts
+            docs
+            data/raw/forecast_vintages
+            data/raw/demand_revisions

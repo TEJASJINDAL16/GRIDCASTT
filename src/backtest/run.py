@@ -51,17 +51,18 @@ def load_cached(root: pathlib.Path, cfg: dict) -> tuple[pd.DataFrame, pd.DataFra
     return d, w
 
 
-def evaluate(demand: pd.DataFrame, weather: pd.DataFrame, cfg: dict) -> dict:
+def evaluate(demand: pd.DataFrame, weather: pd.DataFrame, cfg: dict, *, hybrid=False, excluded=(), plan=None) -> dict:
     """Fit once per fold. Daily issue times constrain every naive lookup."""
     if not get(cfg, "forecast_noise.enabled"):
         raise ValueError("baseline evaluation requires the simulated forecast bridge, not perfect weather")
     weather = weather.dropna(subset=["temperature_2m"])
     base = build_features(weather, cfg, demand=demand)
     base = base.dropna(subset=["temperature", "cooling_degrees"])
-    plan = make_splits(base, cfg)
+    plan = plan or make_splits(base, cfg)
+    model_names = [*BASELINE_NAMES, *(["hybrid"] if hybrid else [])]
     development = base.loc[base.datetime_utc < plan.holdout_start].copy()
     naive = SeasonalNaive(cfg).fit(development)
-    predictions, fold_scores, coverage = [], [], []
+    predictions, fold_scores, coverage, fits = [], [], [], []
     for fold in plan.folds:
         train_raw = development.loc[(development.datetime_utc >= fold.train_start)
                                     & (development.datetime_utc < fold.train_end)].reset_index(drop=True)
@@ -91,6 +92,14 @@ def evaluate(demand: pd.DataFrame, weather: pd.DataFrame, cfg: dict) -> dict:
                   RidgeBaseline(cfg, per_zone=True).fit(train, train_end=fold.train_end)]
         wide = pd.DataFrame({"seasonal_naive": naive_output.prediction_mw,
                              **{name: model.predict(serving) for name, model in zip(BASELINE_NAMES[1:], fitted, strict=True)}})
+        if hybrid:
+            from src.models.hybrid import Hybrid
+            model = Hybrid(cfg, excluded=excluded).fit(train, train_end=fold.train_end)
+            wide["hybrid"] = model.predict(serving)
+            fits.append({"fold": fold.number, "best_iteration": model.best_iteration,
+                         "refit_iterations": model.iterations,
+                         "iteration_ceiling": get(cfg, "runtime.max_boost_rounds"),
+                         "linear_minimum": model.minimum.to_dict(), "training_ranges": model.ranges})
         measured = measured_mask(serving)
         common = measured & np.isfinite(wide).all(axis=1)
         audit = serving.loc[common].copy()
@@ -102,7 +111,7 @@ def evaluate(demand: pd.DataFrame, weather: pd.DataFrame, cfg: dict) -> dict:
         audit["flags"] = [["placeholder_in_use"] for _ in range(len(audit))]
         if (audit.baseline_source_datetime > audit.issued_at - pd.Timedelta(days=get(cfg, "splits.purge_gap_days"))).any():
             raise AssertionError("seasonal baseline saw unsettled history")
-        for name in BASELINE_NAMES:
+        for name in model_names:
             rows = audit.copy()
             rows["model"] = name
             rows["prediction_mw"] = wide.loc[common, name]
@@ -118,7 +127,7 @@ def evaluate(demand: pd.DataFrame, weather: pd.DataFrame, cfg: dict) -> dict:
                   "fold_status": "unreliable: cache gaps" if gap_fraction > get(cfg, "failure.max_gap_fraction") else "cache coverage reliable",
                   "n_measured": int(measured.sum()), "n_common": int(common.sum()),
                   "n_measured_without_comparison": int((measured & ~common).sum())}
-        for name in BASELINE_NAMES:
+        for name in model_names:
             detail[f"n_available_{name}"] = int((measured & np.isfinite(wide[name])).sum())
         coverage.append(detail)
         log.info("fold %02d: %s, train=%d measured=%d compared=%d", fold.number,
@@ -128,7 +137,7 @@ def evaluate(demand: pd.DataFrame, weather: pd.DataFrame, cfg: dict) -> dict:
     if not len(combined):
         raise ValueError("no common measured baseline evaluation rows")
     return {"plan": plan, "predictions": combined, "fold_scores": pd.DataFrame(fold_scores),
-            "coverage": pd.DataFrame(coverage)}
+            "coverage": pd.DataFrame(coverage), "fits": fits}
 
 
 REPORT_COLUMNS = ["model", "n_rows", "mape_pct", "baseline_mape_pct", "mase", "rmsse",
@@ -150,18 +159,23 @@ def write_report(result: dict, cfg: dict, root: pathlib.Path) -> pathlib.Path:
     out = root / get(cfg, "backtest.results_dir")
     out.mkdir(parents=True, exist_ok=True)
     rows, folds, coverage, plan = (result[k] for k in ["predictions", "fold_scores", "coverage", "plan"])
+    model_names = rows.model.unique().tolist()
+    has_hybrid = "hybrid" in model_names
+    is_holdout = get(cfg, "backtest.results_dir") == "reports/holdout"
     summary = pd.DataFrame([{"model": name, **score(rows.loc[rows.model == name], cfg)}
-                            for name in BASELINE_NAMES])
+                            for name in model_names])
     strata = stratified_scores(rows, cfg)
     for name, data in [("summary", summary), ("fold_scores", folds), ("coverage", coverage), ("stratified", strata)]:
         data.to_csv(out / f"{name}.csv", index=False)
+    if result.get("fits"):
+        (out / "fits.json").write_text(json.dumps(result["fits"], indent=2) + "\n", encoding="utf-8")
     prediction_path = root / get(cfg, "backtest.predictions_path")
     prediction_path.parent.mkdir(parents=True, exist_ok=True)
     rows.to_parquet(prediction_path, index=False)
     hashes = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "data/raw").rglob("*.dvc"))}
-    source_paths = [*sorted((root / "src").rglob("*.py")), root / "scripts/backtest_baselines.py",
-                    root / "config/config.yaml"]
+    source_paths = [*sorted((root / "src").rglob("*.py")), *sorted((root / "scripts").glob("*.py")),
+                    root / "config/config.yaml", root / "data/external/festivals_in.csv"]
     source_hashes = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in source_paths}
     input_paths = [root / "data/raw" / f"{kind}_{zone}.parquet"
@@ -175,14 +189,14 @@ def write_report(result: dict, cfg: dict, root: pathlib.Path) -> pathlib.Path:
                 "split_plan": asdict(plan), "input_dvc_pointer_sha256": hashes,
                 "input_parquet_sha256": input_hashes,
                 "source_sha256": source_hashes, "weather_source": "constant-sigma simulated forecast bridge",
-                "holdout_scored": False}
+                "holdout_scored": is_holdout}
     (out / "manifest.json").write_text(json.dumps(manifest, default=str, indent=2) + "\n", encoding="utf-8")
     baseline = summary.loc[summary.model == "seasonal_naive"].iloc[0]
     mean_folds = folds.groupby("model", sort=False)[["mape_pct", "mase", "rmsse"]].mean().reset_index()
     lead = strata.loc[strata.dimension == "lead_time_hours"]
     lead_min, lead_max = rows.lead_time_hours.min(), rows.lead_time_hours.max()
     lead_diagnostics = []
-    for name in BASELINE_NAMES:
+    for name in model_names:
         values = lead.loc[lead.model == name].sort_values("segment", key=lambda s: s.astype(float))
         errors = values.mape_pct.to_numpy()
         lead_diagnostics.append({"model": name, "first_lead_mape_pct": errors[0],
@@ -191,8 +205,10 @@ def write_report(result: dict, cfg: dict, root: pathlib.Path) -> pathlib.Path:
                                  "total_steps": len(errors) - 1})
     start = plan.folds[0].test_start.tz_convert(get(cfg, "project.timezone")).date()
     end = plan.holdout_start.tz_convert(get(cfg, "project.timezone")).date()
-    text = ["# Stage 2: Features and Baseline", "",
-            f"Generated {manifest['generated_at']}. Reproduce: `make baseline` (cached data only).", "",
+    title = "Final Holdout Evaluation" if is_holdout else "Stage 3: Frozen Model Comparison" if has_hybrid else "Stage 2: Features and Baseline"
+    command = "make holdout" if is_holdout else "make model" if has_hybrid else "make baseline"
+    text = [f"# {title}", "",
+            f"Generated {manifest['generated_at']}. Command: `{command}` (cached data only; holdout guarded against repeat evaluation).", "",
             f"**Number to beat: seasonal-naive MAPE {baseline.mape_pct:.3f}% over {int(baseline.n_rows):,} common measured rows.** "
             "Its out-of-sample MASE and RMSSE are 1.000. The Stage 3 selection criterion is mean fold MASE, with RMSSE co-primary; "
             "the pooled MAPE above is descriptive, not a final holdout result.", "",
@@ -274,4 +290,27 @@ def write_report(result: dict, cfg: dict, root: pathlib.Path) -> pathlib.Path:
     path = root / get(cfg, "backtest.report_path")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(text), encoding="utf-8")
+    if has_hybrid:
+        content = path.read_text(encoding="utf-8")
+        content = content.replace("No tuning was run and production hyperparameters remain null.",
+            "Hybrid parameters were frozen by the pre-test measured-target study in reports/tuning/result.json. "
+            "That validation period replaces the original early tuning year, which has no measured targets. "
+            "Only IN-EA contributes measured tuning targets; cross-zone tuning evidence is limited.")
+        content = content.replace("This benchmark", "This model comparison")
+        content = content.replace("reports/baseline/", get(cfg, "backtest.results_dir") + "/")
+        content = content.replace("data/interim/baseline_predictions.parquet", get(cfg, "backtest.predictions_path"))
+        content += "\n## Hybrid\n\nRidge uses the configured linear features; LightGBM learns log residuals. "
+        content += "Chronological early stopping is followed by a full-history refit with scaled iteration count. "
+        content += "Recency weighting and per-zone Duan smearing apply. No speculative cause-based exclusions.\n"
+        if is_holdout:
+            content = content.replace("the pooled MAPE above is descriptive, not a final holdout result.",
+                                      "the figures above are the final reserved-period evaluation.")
+            begin = content.index("The final holdout is ")
+            finish = content.index("A partial newest month", begin)
+            content = content[:begin] + "This run evaluates the reserved final period once with frozen parameters and monthly refits. " + content[finish:]
+            content = content.replace("(4) no holdout rows are scored", "(4) the final period is scored only by the guarded holdout command")
+        path.write_text(content, encoding="utf-8")
+        from src.viz.plots import bars
+        bars(out / "comparison.svg", summary.model.tolist(), summary.mape_pct.tolist(),
+             summary.baseline_mape_pct.tolist(), summary.n_rows.tolist(), "MAPE (%)")
     return path

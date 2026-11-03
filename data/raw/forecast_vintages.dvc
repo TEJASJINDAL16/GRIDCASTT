@@ -1,6 +1,6 @@
 outs:
-- md5: 297ab21dbc0393e41d8a2a000072e57f.dir
-  size: 112212
+- md5: d5620adc4f687418ca4cfed14ea74329.dir
+  size: 133545
   nfiles: 3
   hash: md5
   path: forecast_vintages

@@ -7,6 +7,13 @@ Read this file completely before writing code.
 
 ## 0. How to use this document
 
+**Owner authorization, 2026-11-04:** complete the remaining project without
+manual approval at each stage. Resolve routine implementation choices and
+document evidence and limitations in `reports/implementation_decisions.md`.
+The measured-only pre-test tuning amendment in that report supersedes the
+unusable earliest-year tuning interval. No performance or deployment gate may
+be marked passed without evidence. INV-8's observation-retention decision stays.
+
 - **RULE** lines are binding. Do not violate them, do not "improve" on them.
 - *Rationale* notes explain why a rule exists. They are context, not licence
   to reinterpret the rule.

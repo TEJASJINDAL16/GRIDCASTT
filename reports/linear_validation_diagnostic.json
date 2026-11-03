@@ -1,0 +1,14 @@
+{
+  "validation_start": "2024-05-21 04:30:00+00:00",
+  "validation_end": "2024-08-21 04:30:00+00:00",
+  "n_rows": 2184,
+  "zones": [
+    "IN-EA"
+  ],
+  "current_mase": 0.902436560623064,
+  "zone_centered_mase": 0.9235485540322247,
+  "uses_test_folds": false,
+  "uses_holdout": false,
+  "best_iteration": 1416,
+  "refit_iterations": 1484
+}

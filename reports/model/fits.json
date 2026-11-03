@@ -1,0 +1,728 @@
+[
+  {
+    "fold": 1,
+    "best_iteration": 184,
+    "refit_iterations": 193,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 0.5398500102638615,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 0.5398500102638615,
+          "max": 47.06680149919025
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 21.977690681535556
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 11.063613564067907,
+          "max": 42.75081154837468
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 17.661700730719986
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 10.509392177338695,
+          "max": 40.969761296070494
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.880650478415802
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 8.112887073972878,
+          "max": 43.626198280319606
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.537087462664914
+        }
+      }
+    }
+  },
+  {
+    "fold": 2,
+    "best_iteration": 145,
+    "refit_iterations": 152,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 0.9721728748987652,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 0.9721728748987652,
+          "max": 48.17118101555731
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 23.082070197902617
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 13.027121478016515,
+          "max": 39.99512124166836
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 14.906010424013665
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 9.393992666417716,
+          "max": 41.41850203571465
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.32939121805996
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 8.558800371509673,
+          "max": 44.00542608100548
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.91631526335079
+        }
+      }
+    }
+  },
+  {
+    "fold": 3,
+    "best_iteration": 146,
+    "refit_iterations": 153,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 2.2714017167511615,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 2.2714017167511615,
+          "max": 46.808693404165766
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 21.719582586511073
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 11.539605208334729,
+          "max": 43.76683810965045
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.677727291995758
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 8.660497288700832,
+          "max": 39.89115536197961
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 14.802044544324914
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 8.593458313580328,
+          "max": 43.8122734160698
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.723162598415108
+        }
+      }
+    }
+  },
+  {
+    "fold": 4,
+    "best_iteration": 167,
+    "refit_iterations": 175,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 1.4134630990939079,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 1.4134630990939079,
+          "max": 49.02113724799015
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 23.932026430335455
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 12.117960012010418,
+          "max": 42.05122985321415
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.96211903555946
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 10.806775510151926,
+          "max": 39.85680021014851
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 14.767689392493821
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 7.960889326578228,
+          "max": 43.200655669385654
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.11154485173096
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 14.159759716229063,
+          "max": 29.836548616702622
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 4.74743779904793
+        }
+      }
+    }
+  },
+  {
+    "fold": 5,
+    "best_iteration": 315,
+    "refit_iterations": 330,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 0.37084656060692833,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 0.37084656060692833,
+          "max": 47.12011944480803
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 22.03100862715334
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 11.676040023927778,
+          "max": 41.22001281431598
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.130901996661287
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 9.776278072244759,
+          "max": 40.55581532621218
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.466704508557491
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 7.971418419986637,
+          "max": 43.423805853086606
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.334695035431913
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 9.563369085718856,
+          "max": 30.639662272404927
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 5.550551454750234
+        }
+      }
+    }
+  },
+  {
+    "fold": 6,
+    "best_iteration": 69,
+    "refit_iterations": 73,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 1.422740804597645,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 1.422740804597645,
+          "max": 48.048198643271
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 22.959087825616308
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 11.118370133816562,
+          "max": 40.810086359368604
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.720975541713912
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 10.921725921772538,
+          "max": 41.042250975103094
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.953140157448402
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 8.577980068404104,
+          "max": 43.98945132632
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.90034050866531
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 9.080842619122919,
+          "max": 32.942427813202414
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 7.853316995547722
+        }
+      }
+    }
+  },
+  {
+    "fold": 7,
+    "best_iteration": 435,
+    "refit_iterations": 456,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 0.1604794879756749,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 0.1604794879756749,
+          "max": 47.49630232998038
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 22.40719151232569
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 12.47570378271109,
+          "max": 41.43779302335999
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.348682205705295
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 9.193084654393664,
+          "max": 41.02840393250384
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.93929311484915
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 8.82074655826087,
+          "max": 44.99231475686119
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 19.9032039392065
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 8.772898682149991,
+          "max": 31.155129959466873
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 6.0660191418121805
+        }
+      }
+    }
+  },
+  {
+    "fold": 8,
+    "best_iteration": 825,
+    "refit_iterations": 864,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 2.4367217412960938,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 2.4367217412960938,
+          "max": 49.026705526581054
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 23.937594708926362
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 11.37936628315669,
+          "max": 39.99472569073356
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 14.905614873078868
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 9.281865644410068,
+          "max": 41.432055314181504
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.342944496526812
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 7.444293021250498,
+          "max": 43.224306197598175
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.135195379943482
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 9.076101090172804,
+          "max": 33.020995047236404
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 7.931884229581712
+        }
+      }
+    }
+  },
+  {
+    "fold": 9,
+    "best_iteration": 2506,
+    "refit_iterations": 2621,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 2.1332023772243414,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 2.1332023772243414,
+          "max": 48.350446765000555
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 23.261335947345863
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 13.123750033771687,
+          "max": 42.049408529438566
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.960297711783873
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 8.278548378178868,
+          "max": 41.80405174614818
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.71494092849349
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 9.688940702055653,
+          "max": 42.71247554230438
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 17.62336472464969
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 7.8466147151681795,
+          "max": 36.34430083441744
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 11.255190016762747
+        }
+      }
+    }
+  },
+  {
+    "fold": 10,
+    "best_iteration": 1186,
+    "refit_iterations": 1239,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 1.9203245377466467,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 1.9203245377466467,
+          "max": 49.07198185593533
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 23.982871038280635
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 11.84025486002674,
+          "max": 40.3766091478828
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.28749833022811
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 9.959411913480011,
+          "max": 40.327740636836275
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.238629819181583
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 9.23169428874265,
+          "max": 44.794823123537064
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 19.705712305882372
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 6.37978346860218,
+          "max": 35.8684173265975
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 10.77930650894281
+        }
+      }
+    }
+  },
+  {
+    "fold": 11,
+    "best_iteration": 2602,
+    "refit_iterations": 2715,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 2.30169479517504,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 2.30169479517504,
+          "max": 48.06658478060074
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 22.97747396294605
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 13.941170192818811,
+          "max": 41.7577937590931
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.668682941438405
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 10.638779542583372,
+          "max": 41.00784362347698
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 15.918732805822287
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 9.95541620061908,
+          "max": 45.1178798673135
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 20.028769049658806
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 7.588389571617326,
+          "max": 37.894902908681146
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 12.805792091026454
+        }
+      }
+    }
+  },
+  {
+    "fold": 12,
+    "best_iteration": 600,
+    "refit_iterations": 625,
+    "iteration_ceiling": 5000,
+    "linear_minimum": {
+      "temperature": 2.0284769305942874,
+      "cooling_degrees": 0.0,
+      "trend": 1095.0
+    },
+    "training_ranges": {
+      "IN-NO": {
+        "temperature": {
+          "min": 2.0284769305942874,
+          "max": 47.80707056551566
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 22.717959747860967
+        }
+      },
+      "IN-WE": {
+        "temperature": {
+          "min": 13.064731479066099,
+          "max": 41.2391474893502
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 16.15003667169551
+        }
+      },
+      "IN-SO": {
+        "temperature": {
+          "min": 10.846323715231577,
+          "max": 42.3403410336133
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 17.251230215958607
+        }
+      },
+      "IN-EA": {
+        "temperature": {
+          "min": 8.618480271924952,
+          "max": 43.86417597459812
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 18.775065156943427
+        }
+      },
+      "IN-NE": {
+        "temperature": {
+          "min": 8.971703760377395,
+          "max": 39.06437511536354
+        },
+        "cooling_degrees": {
+          "min": 0.0,
+          "max": 13.975264297708847
+        }
+      }
+    }
+  }
+]

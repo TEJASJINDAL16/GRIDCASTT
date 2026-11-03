@@ -1,0 +1,6 @@
+outs:
+- md5: b8dc13e96e240d0c12bdcfbf4152cabb.dir
+  size: 4246308
+  nfiles: 9
+  hash: md5
+  path: repro_linux

@@ -41,7 +41,7 @@ def test_cooling_degrees_are_recomputed_and_feature_contract_is_preserved(cfg):
                                                     estimation_method=None)
     train = build_features(noisy, cfg, demand=demand)
     serving = build_features(noisy, cfg)
-    np.testing.assert_allclose(train.cooling_degrees, np.maximum(0, noisy.temperature_2m - 21.5))
+    np.testing.assert_allclose(train.cooling_degrees, np.maximum(0, noisy.temperature_2m - cfg["features"]["temp_breakpoint_c"]))
     pd.testing.assert_frame_equal(feature_matrix(train), feature_matrix(serving))
     assert train.demand_mw.eq(1000).all()
 

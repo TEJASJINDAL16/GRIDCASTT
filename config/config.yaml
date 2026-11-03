@@ -95,7 +95,7 @@ features:
   # increasing in temperature across the whole observed range; this is the
   # breakpoint at which an already-positive slope STEEPENS. The old name would
   # mislead every future reader. See 13 and reports/step0_measurements.md.
-  temp_breakpoint_c: 21.5
+  temp_breakpoint_c: 25.089110817654692
   # heating_threshold_c DELETED. There is no U-shape and no pooled cold-side
   # rise, so there is no cold inflection to hold a threshold. See 13.
   rolling_temp_windows_h: [24, 72, 168]
@@ -213,22 +213,22 @@ splits:
 train:
   target_transform: log            # train on log(demand), report MW
   correct_retransformation_bias: true
-  recency_half_life_days: 365
+  recency_half_life_days: 320
   per_zone_sample_weighting: false # only if measurement shows a zone dominating
   seed: 42                         # pins LightGBM subsampling and Optuna
   retransformation: duan_smearing  # per zone, on the summed two-stage output
   ridge:
-    alpha: null                    # DERIVED by tuning (step 10)
+    alpha: 0.14657299440820595                    # DERIVED by tuning (step 10)
     standardize: true              # trend spans 0-2000, cooling_degrees 0-25
     fit_intercept: true
   lightgbm:                        # all DERIVED by tuning (step 10)
-    num_leaves: null
-    learning_rate: null
-    min_data_in_leaf: null
-    feature_fraction: null
-    bagging_fraction: null
-    lambda_l1: null
-    lambda_l2: null
+    num_leaves: 44
+    learning_rate: 0.02236699048967922
+    min_data_in_leaf: 57
+    feature_fraction: 0.7124017792735836
+    bagging_fraction: 0.9846291327811688
+    lambda_l1: 0.07490877401405181
+    lambda_l2: 0.02677706893676713
     # n_estimators is NOT tuned - early stopping selects it per fold
 
 # --- Forecast error simulation (see 5d) ---
@@ -256,6 +256,19 @@ tuning:
   method: optuna
   n_trials: 100
   log_to_mlflow: true
+  measured_validation_months: 3
+  budget_seconds: 7200
+  search:
+    recency_half_life_days: [90, 1095]
+    temp_breakpoint_c: [18.0, 28.0]
+    alpha: [0.01, 100.0]
+    num_leaves: [15, 63]
+    learning_rate: [0.02, 0.15]
+    min_data_in_leaf: [30, 200]
+    feature_fraction: [0.7, 1.0]
+    bagging_fraction: [0.7, 1.0]
+    lambda_l1: [0.00001, 10.0]
+    lambda_l2: [0.00001, 10.0]
   # Retraining does NOT retune. These are frozen between deliberate searches.
 
 # --- Evaluation ---
@@ -288,34 +301,35 @@ evaluate:
   # Every veto is a tolerance, never a bare inequality. DERIVED at step 10a
   # from each metric's own fold-to-fold spread. See 5g / 13.
   veto_tolerance:
-    top_band_pct: null
-    signed_bias_pct: null
-    shortfall_freq_pct: null
-    p95_pct: null
+    top_band_pct: 3.2289341502574427
+    signed_bias_pct: 4.492958868628548
+    shortfall_freq_pct: 18.553212107225928
+    p95_pct: 13.107129944516172
 
 # --- Drift triggers ---
 # Thresholds are DERIVED from the phase 1 backtest error distribution, not
 # chosen by hand, and are absolute once set - never recomputed from recent
 # performance (see 5g Monitoring / section 6).
 drift:
-  thresholds_derived: false        # flip to true once the backtest has run
+  thresholds_derived: true        # flip to true once the backtest has run
   rolling_window_days: 30
   monitor_alarm_days: 90           # no trigger this long -> check the monitor
   # --- settlement lag (see 5g) ---
   window_ends_at: settlement_frontier   # NOT today; window lags the present
   # --- trigger derivation (see 6) ---
   false_alarm_budget_per_year: 2        # THE tunable. thresholds fall out of it
-  debounce_days: 3                      # consecutive breaches before firing
+  debounce_days: 1                      # consecutive breaches before firing
   per_zone_thresholds: true             # a pooled figure hides a small zone
   cooldown_after_promotion_days: 30     # one full window must flush through
   cooldown_after_rejection_days: 14
   post_promotion_watch_days: 7          # live during cooldown - see 6
   post_promotion_watch_escalates: true  # the cooldown's blind-spot cover
-  watch_threshold: null                 # DERIVED - 7-day window sweep
+  watch_threshold: {IN-EA: 33.911712455769184, IN-NE: 83.96469917519437, IN-NO: 28.47570069516403, IN-SO: 30.87609564061138,
+  IN-WE: 41.49112419901737, pooled: 33.71460588227433}                 # DERIVED - 7-day window sweep
   replay_model_mode: refreshed          # per-fold refit, never frozen
   injected_drift_pct: [2, 5, 10]        # tiebreak sweep - see 6
   structural_break_escalate: [3, 7]     # breach 3 of 7 days -> retrain trigger
-  thresholds_backtest_sha: null         # mismatch disarms the monitor
+  thresholds_backtest_sha: e3bd5e213d98fc9adacf15f609fc9b4580e13ab9         # mismatch disarms the monitor
   score_policy: frozen                  # monitoring/triggers freeze; backtest is live
   settlement_frontier_replay: false     # flip to true once demand_revisions has
                                         # enough history; until then thresholds
@@ -323,9 +337,13 @@ drift:
   frontier_scope: per_zone              # pooled figure uses the earliest of five
   cooldown_after_failure_days: 14       # a failed attempt cools down too (6)
   thresholds:                           # DERIVED at step 10a - see 6
-    rolling_error:    {pooled: null, per_zone: {}}
-    signed_bias:      {pooled: null, per_zone: {}}
-    structural_break: {pooled: null, per_zone: {}}
+    {rolling_error: {per_zone: {IN-EA: 28.692292213811083, IN-NE: 39.3432288551627, IN-NO: 22.744340976878554,
+      IN-SO: 24.242426333764236, IN-WE: 25.991171896577487}, pooled: 18.85969623449465},
+  signed_bias: {per_zone: {IN-EA: 28.181297974606707, IN-NE: 38.10443600462227, IN-NO: 16.887670690001837,
+      IN-SO: 24.221818022610233, IN-WE: 24.61439037477306}, pooled: 10.67137367051579},
+  structural_break: {per_zone: {IN-EA: 46.53505928861587, IN-NE: 111.95465149150385,
+      IN-NO: 37.32071607675496, IN-SO: 57.96275365084898, IN-WE: 47.979514342343535},
+    pooled: 28.451450013147504}}
   settlement_lag_days: null             # ASSUMPTION - measure via demand_revisions
 
 # --- Failure policy (see 5h) ---
@@ -355,3 +373,19 @@ dashboard:
   show_row_counts: true
   draw_trigger_thresholds: true    # warning before firing, not after
   quantile_bands: false            # phase 1b
+
+runtime:
+  threads: 2
+  ablation_workers: 2
+  max_boost_rounds: 5000  # Reserved-window convergence check, 2026-11-04: stops at 1456
+  early_stopping_rounds: 40
+  image_digest: null
+  model_path: models/champion.joblib
+  model_metadata: models/champion.json
+  forecast_dir: data/interim/forecasts
+  score_dir: state/scores
+  min_settled_fraction: 0.8
+  threshold_steps: 30
+  threshold_scale_bounds: [0.5, 1.5]
+  replay_stress_pct: 50  # Functional recovery stress case, never a skill estimate
+  debounce_candidates: [1, 2, 3, 5, 7]

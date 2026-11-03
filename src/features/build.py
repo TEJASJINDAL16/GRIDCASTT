@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from src.config import get
@@ -114,6 +115,13 @@ def build_features(
     out["zone"] = _zone_categorical(zonal["zone"], cfg)
 
     out = out[FEATURE_COLUMNS].astype(FEATURE_DTYPES)
+    if cfg["features"].get("candidate_day_of_year", False):
+        # An explicit ablation candidate, disabled in the production core.
+        ist = calendar["datetime_ist"]
+        year_length = np.where(ist.dt.is_leap_year, 366, 365)
+        angle = 2 * np.pi * (ist.dt.dayofyear - 1) / year_length
+        out["day_of_year_sin"] = np.sin(angle)
+        out["day_of_year_cos"] = np.cos(angle)
 
     out["datetime_utc"] = zonal["datetime_utc"].to_numpy()
     out["datetime_ist"] = calendar["datetime_ist"].to_numpy()

@@ -1,0 +1,17 @@
+{
+  "checked_on": "2026-11-04",
+  "desktop_viewport": [
+    1440,
+    1000
+  ],
+  "mobile_viewport": [
+    390,
+    844
+  ],
+  "all_five_regions_switch": true,
+  "javascript_errors": 0,
+  "horizontal_page_overflow": false,
+  "development_lead_chart": "docs/assets/development-lead.svg",
+  "status": "passed",
+  "development_chart_loads": true
+}

@@ -1,0 +1,19 @@
+{
+  "reserved_validation_only": true,
+  "records": [
+    {
+      "iteration_ceiling": 1000,
+      "best_iteration": 1000,
+      "refit_iterations": 1048,
+      "mase": 0.8997038661752287,
+      "cap_reached": true
+    },
+    {
+      "iteration_ceiling": 5000,
+      "best_iteration": 1456,
+      "refit_iterations": 1526,
+      "mase": 0.902436560623064,
+      "cap_reached": false
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "dashboard_live": false,
+  "image_published": false,
+  "remote_backup_verified": false,
+  "checked_on": "2026-11-04",
+  "reason": "Local Drive authentication returns invalid_grant. GitHub deployment was not performed; owner retains Git/GitHub operations under AGENTS.md. Three real successful daily dates are not available.",
+  "local_archive": "Capture and catch-up succeeded for all five zones; see data_inventory.md.",
+  "local_image_verified": true,
+  "local_image_id": "sha256:ebf2c771228c1a790b0e07a3876e8417ff221dae6a4ef92e7b94ce1bb4d6ce63",
+  "latest_github_archive_run": "https://github.com/TEJASJINDAL16/GRIDCASTT/actions/runs/41633363715",
+  "latest_github_archive_status": "failure"
+}

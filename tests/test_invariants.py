@@ -231,8 +231,21 @@ def test_inv7_tuning_window_is_reserved_and_separate(cfg):
 def test_inv7_tuned_parameters_are_null_until_the_search_runs(cfg):
     """A tuned parameter with a value before step 10 was chosen by a human
     looking at something. Which something is the question INV-7 asks."""
-    assert cfg["train"]["ridge"]["alpha"] is None
-    assert all(v is None for v in cfg["train"]["lightgbm"].values())
+    if cfg["train"]["ridge"]["alpha"] is None:
+        assert all(v is None for v in cfg["train"]["lightgbm"].values())
+        return
+    import json
+
+    import pandas as pd
+    evidence = json.loads((PROJECT_ROOT / "reports/tuning/result.json").read_text(encoding="utf-8"))
+    selected = evidence["selected"]
+    assert not evidence["bound_parameters"], "A boundary is not an identified parameter"
+    assert evidence["trials_completed"] > 0 and evidence["n_rows"] > 0
+    assert pd.Timestamp(evidence["train_end"]) < pd.Timestamp(evidence["validation_start"])
+    assert cfg["train"]["ridge"]["alpha"] == selected["alpha"]
+    assert cfg["features"]["temp_breakpoint_c"] == selected["temp_breakpoint_c"]
+    assert cfg["train"]["recency_half_life_days"] == selected["recency_half_life_days"]
+    assert all(v == selected[k] for k, v in cfg["train"]["lightgbm"].items())
 
 
 def test_inv7_tuning_boundaries_exclude_every_test_fold(cfg):

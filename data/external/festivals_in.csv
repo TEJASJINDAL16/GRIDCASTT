@@ -11,14 +11,28 @@
 #   never guess. A wrong date here is invisible: it mislabels is_holiday for
 #   that day and the model quietly learns the wrong effect.
 #
-# KNOWN GAP, NOT YET FILLED
+# PARTIAL VERIFIED COVERAGE
+#   The 2024/2025 Shashthi through Navami dates below come from Government
+#   of West Bengal holiday notifications, not offsets from another festival:
+#   https://wbpar.gov.in/writereaddata/holiday/6112-F(P2).pdf
+#   https://wb.gov.in/pdf/Holiday-2025.pdf
+#   Earlier years and 2026 remain unverified; this is not an exhaustive list.
+#
+# REMAINING GAPS
 #   Durga Puja (IN-EA). Four to five days in Sep/Oct in which West Bengal
 #   substantially shuts down - plausibly the largest single demand event in
 #   that zone. The package carries Dussehra, which is Vijaya Dashami, the
 #   LAST day; the preceding Shashthi through Navami days are absent. The
 #   window could be derived from the Dussehra date, but deriving it is
-#   exactly what the rule above forbids, so it is left empty and reported.
+#   exactly what the rule above forbids, so unverified years remain absent.
 #   Others likely missing: Chhath (IN-NO/IN-EA), Onam and Pongal (IN-SO).
 #
 # Columns: date (YYYY-MM-DD, IST), zone (or ALL), name
 date,zone,name
+2024-10-09,IN-EA,Durga Puja Shashthi
+2024-10-10,IN-EA,Durga Puja Saptami
+2024-10-11,IN-EA,Durga Puja Ashtami and Navami
+2025-09-28,IN-EA,Durga Puja Shashthi
+2025-09-29,IN-EA,Durga Puja Saptami
+2025-09-30,IN-EA,Durga Puja Ashtami
+2025-10-01,IN-EA,Durga Puja Navami

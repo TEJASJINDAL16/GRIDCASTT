@@ -7,14 +7,17 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from src.backtest.run import evaluate, load_cached, write_report
+from src.backtest.splits import research_plan
 from src.config import PROJECT_ROOT, load_config
+from src.features.build import build_features
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     cfg = load_config()
     demand, weather = load_cached(PROJECT_ROOT, cfg)
-    result = evaluate(demand, weather, cfg)
+    plan = research_plan(PROJECT_ROOT, build_features(weather, cfg, demand=demand), cfg)
+    result = evaluate(demand, weather, cfg, plan=plan)
     path = write_report(result, cfg, PROJECT_ROOT)
     print(f"Baseline report: {path}")
 

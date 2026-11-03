@@ -107,8 +107,8 @@ def test_zones_are_aggregated_independently(cfg):
         "point_name": ["Delhi", "Bengaluru"], "temperature_2m": [40.0, 25.0]})
     out = weather_features(two, cfg).set_index("zone")
     bp = cfg["features"]["temp_breakpoint_c"]
-    assert out.loc["IN-NO", "cooling_degrees"] == pytest.approx(40.0 - bp)
-    assert out.loc["IN-SO", "cooling_degrees"] == pytest.approx(25.0 - bp)
+    assert out.loc["IN-NO", "cooling_degrees"] == pytest.approx(max(0, 40.0 - bp))
+    assert out.loc["IN-SO", "cooling_degrees"] == pytest.approx(max(0, 25.0 - bp))
 
 
 def test_on_the_real_cached_weather(cfg, project_root):

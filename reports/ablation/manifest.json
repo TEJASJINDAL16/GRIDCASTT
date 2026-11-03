@@ -1,0 +1,42 @@
+{
+  "pins": {
+    "git_sha": "e3bd5e213d98fc9adacf15f609fc9b4580e13ab9",
+    "source_sha256": "288fadd8105e5c15b52b6a984741cd1e5896184df681899ed0b43c296c51dba9",
+    "data_sha256": null,
+    "data_dvc_md5": null,
+    "dvc_pointer_sha256": {
+      "data/interim/baseline_predictions.parquet.dvc": "f11096d956e65a694cf0dbce0866e2e5b764a0d3177bcede6770d53221e9fb14",
+      "data/interim/model_predictions.parquet.dvc": "ec47234617f57eef713f3587e181f5d753316468ebac13fbeaf556f18d1910b3",
+      "data/interim/tuning_training.parquet.dvc": "647716875fa278729655e8cd1f78f81f3adea4edf3f750105fc36f04e56e2d2c",
+      "data/raw/demand_IN-EA.parquet.dvc": "580b4a456081c518a9605b0f078bdea6c1c0ef15b865f57f42d6221b4a8846a3",
+      "data/raw/demand_IN-NE.parquet.dvc": "fa8a5af64a00b769bacbf63c8b5f1ee6eee92af76522bbe6c8f3521fbb15b344",
+      "data/raw/demand_IN-NO.parquet.dvc": "09b102a7a9c74735fdc90c5a4c3d0d355e4a8c8433efb59b0aeae37ec91eb911",
+      "data/raw/demand_IN-SO.parquet.dvc": "44647ae41b482b6050beac233d1eba045a10309a7c8221067562e4d57d0d7432",
+      "data/raw/demand_IN-WE.parquet.dvc": "cc703d8e4feeb89d963e8837607cf321ade7b989becfe2a80f642946a918f968",
+      "data/raw/demand_revisions.dvc": "573c14a0d8975036f87b73f6face5af88dfcf068b501206fe5b50da729fc9229",
+      "data/raw/forecast_vintages.dvc": "7266ebb49a309d6f6bcd9f221cd610a3da5e51c591ffddcbc36bbe877a0a5b33",
+      "data/raw/forecast_vintages_recovered.dvc": "c2415b9243b932b341d3ebbb152a232cd0c369d2fe876a65fffd68f9781ea13f",
+      "data/raw/weather_IN-EA.parquet.dvc": "1de22c3f3d197aacf094533889527cf1f12796e80f8ab79edfe2e08f8b89ef08",
+      "data/raw/weather_IN-NE.parquet.dvc": "8faa5878e7a5b2be843cb489cdf624466c92b6d22147b195a004c667d85ace54",
+      "data/raw/weather_IN-NO.parquet.dvc": "d112d0a5d179bb5f8cf2c12a0d9c512e8c532d854748f7b52c435138eac6d65a",
+      "data/raw/weather_IN-SO.parquet.dvc": "a707b0738c4574848c17f55c0020c53c0d1d21c52a225c89202d0e1c31ce4cb9",
+      "data/raw/weather_IN-WE.parquet.dvc": "68175de6078fcd819870219aa28d38f9865c6944d9558ffd888bc27f69423ee3"
+    },
+    "config_sha256": "74988d16cf61e31540dd24501154bf4aeb900417c1923f6bc5e2c049bd52d8e2",
+    "image_digest": null,
+    "seed": 42
+  },
+  "variants": [
+    "without_hour_of_day",
+    "without_day_of_week",
+    "without_is_holiday",
+    "without_temperature",
+    "without_cooling_degrees",
+    "without_trend",
+    "without_zone",
+    "add_cyclic_day_of_year",
+    "include_earlier_east",
+    "measured_only",
+    "mixed_same_three_folds"
+  ]
+}

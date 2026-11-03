@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 
 import pandas as pd
 
 from src.config import get
 from src.features.build import trainable_mask
+from src.records import write_json
 
 
 @dataclass(frozen=True)
@@ -29,11 +31,53 @@ class SplitPlan:
     folds: tuple[Fold, ...]
 
 
+def research_plan(root, frame, cfg):
+    """Freeze the initial data-derived boundaries across later cache refreshes."""
+    path = root / "reports/research_protocol.json"
+    if path.exists():
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if saved["split_settings"] != cfg["splits"]:
+            raise ValueError(
+                "research split settings changed; record an explicit replacement protocol"
+            )
+        values = saved["split_plan"]
+    else:
+        baseline = root / "reports/baseline/manifest.json"
+        values = (
+            json.loads(baseline.read_text(encoding="utf-8"))["split_plan"]
+            if baseline.exists()
+            else asdict(make_splits(frame, cfg))
+        )
+        write_json(
+            path,
+            {
+                "origin": "initial data-derived split plan; retained across cache refreshes",
+                "split_settings": cfg["splits"],
+                "split_plan": values,
+            },
+        )
+    folds = tuple(
+        Fold(
+            **{
+                key: int(value) if key == "number" else pd.Timestamp(value)
+                for key, value in fold.items()
+            }
+        )
+        for fold in values["folds"]
+    )
+    return SplitPlan(
+        **{key: pd.Timestamp(value) for key, value in values.items() if key != "folds"}, folds=folds
+    )
+
+
 def issue_times(targets: pd.Series, cfg: dict) -> pd.Series:
     """10:00 IST on the day before each target's IST calendar day."""
     local = targets.dt.tz_convert(get(cfg, "project.timezone"))
-    return (local.dt.normalize() - pd.Timedelta(days=1)
-            + pd.Timedelta(hours=get(cfg, "backtest.issue_hour_ist"))).dt.tz_convert("UTC")
+    return (
+        local.dt.normalize()
+        - pd.Timedelta(days=1)
+        + pd.Timedelta(hours=get(cfg, "backtest.issue_hour_ist"))
+    ).dt.tz_convert("UTC")
 
 
 def make_splits(frame: pd.DataFrame, cfg: dict) -> SplitPlan:
@@ -64,17 +108,37 @@ def make_splits(frame: pd.DataFrame, cfg: dict) -> SplitPlan:
     for i in range(get(cfg, "splits.walk_forward_folds")):
         test_start = first_test + pd.DateOffset(months=i)
         test_end = test_start + pd.DateOffset(months=1)
-        first_issue = test_start - pd.Timedelta(days=1) + pd.Timedelta(
-            hours=get(cfg, "backtest.issue_hour_ist"))
+        first_issue = (
+            test_start
+            - pd.Timedelta(days=1)
+            + pd.Timedelta(hours=get(cfg, "backtest.issue_hour_ist"))
+        )
         train_end = first_issue - pd.Timedelta(days=get(cfg, "splits.purge_gap_days"))
-        folds.append(Fold(i + 1, start.tz_convert("UTC"), train_end.tz_convert("UTC"),
-                          (train_end - pd.Timedelta(weeks=get(cfg, "splits.early_stopping_weeks"))).tz_convert("UTC"),
-                          test_start.tz_convert("UTC"), test_end.tz_convert("UTC")))
-    return SplitPlan(start.tz_convert("UTC"), tuning_end.tz_convert("UTC"),
-                     holdout_start.tz_convert("UTC"), end.tz_convert("UTC"), tuple(folds))
+        folds.append(
+            Fold(
+                i + 1,
+                start.tz_convert("UTC"),
+                train_end.tz_convert("UTC"),
+                (
+                    train_end - pd.Timedelta(weeks=get(cfg, "splits.early_stopping_weeks"))
+                ).tz_convert("UTC"),
+                test_start.tz_convert("UTC"),
+                test_end.tz_convert("UTC"),
+            )
+        )
+    return SplitPlan(
+        start.tz_convert("UTC"),
+        tuning_end.tz_convert("UTC"),
+        holdout_start.tz_convert("UTC"),
+        end.tz_convert("UTC"),
+        tuple(folds),
+    )
 
 
 def measured_mask(frame: pd.DataFrame) -> pd.Series:
     """Unknown flags are unscorable, as are nonpositive or missing targets."""
-    return (~frame.is_estimated.fillna(True).astype(bool)
-            & frame.demand_mw.notna() & (frame.demand_mw > 0))
+    return (
+        ~frame.is_estimated.fillna(True).astype(bool)
+        & frame.demand_mw.notna()
+        & (frame.demand_mw > 0)
+    )

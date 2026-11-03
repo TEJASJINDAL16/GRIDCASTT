@@ -1,0 +1,31 @@
+{
+  "real_training_data": true,
+  "n_training_rows": 165130,
+  "train_cutoff": "2025-07-21 04:30:00+00:00",
+  "holdout_start": "2025-08-31 18:30:00+00:00",
+  "holdout_used_for_training": false,
+  "recorded_vintage": "2026-09-08 08:18:34.936075+00:00",
+  "outcome": "success",
+  "forecast_rows": 120,
+  "zones": [
+    "IN-EA",
+    "IN-NE",
+    "IN-NO",
+    "IN-SO",
+    "IN-WE"
+  ],
+  "steps": [
+    "archive",
+    "score",
+    "rolling_metrics",
+    "triggers",
+    "promotion",
+    "forecast",
+    "publish"
+  ],
+  "repeat_identical": true,
+  "production_approval": false,
+  "approval_fixture": "Simulated only inside a temporary offline control test. This is not a model-selection pass or a live run.",
+  "best_iteration": 296,
+  "refit_iterations": 309
+}

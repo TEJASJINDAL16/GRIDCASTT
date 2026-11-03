@@ -1,1 +1,6 @@
 /baseline_predictions.parquet
+/model_predictions.parquet
+/tuning_training.parquet
+/model_initial_capped_predictions.parquet
+/tuning_study.sqlite3
+/repro_linux

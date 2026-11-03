@@ -24,3 +24,9 @@ venv/
 /.dvc/cache
 /.dvc/config.local
 .dvc/tmp/gdrive-user-credentials.json
+
+# Temporary lock and experiment database; artifacts are tracked with DVC.
+state/.daily.lock
+reports/tuning/*.sqlite3
+reports/tuning/*.sqlite3-*
+/mlruns

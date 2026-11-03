@@ -1,0 +1,201 @@
+{
+  "generated_at": "2026-11-03T19:57:38.893748+00:00",
+  "seed": 42,
+  "versions": {
+    "python": "3.12.13",
+    "pandas": "3.0.5",
+    "numpy": "2.5.3",
+    "sklearn": "1.9.0"
+  },
+  "split_plan": {
+    "tuning_start": "2019-12-31 18:30:00+00:00",
+    "tuning_end": "2020-12-31 18:30:00+00:00",
+    "holdout_start": "2025-08-31 18:30:00+00:00",
+    "holdout_end": "2026-08-31 18:30:00+00:00",
+    "folds": [
+      {
+        "number": 1,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2024-08-21 04:30:00+00:00",
+        "validation_start": "2024-06-26 04:30:00+00:00",
+        "test_start": "2024-08-31 18:30:00+00:00",
+        "test_end": "2024-09-30 18:30:00+00:00"
+      },
+      {
+        "number": 2,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2024-09-20 04:30:00+00:00",
+        "validation_start": "2024-07-26 04:30:00+00:00",
+        "test_start": "2024-09-30 18:30:00+00:00",
+        "test_end": "2024-10-31 18:30:00+00:00"
+      },
+      {
+        "number": 3,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2024-10-21 04:30:00+00:00",
+        "validation_start": "2024-08-26 04:30:00+00:00",
+        "test_start": "2024-10-31 18:30:00+00:00",
+        "test_end": "2024-11-30 18:30:00+00:00"
+      },
+      {
+        "number": 4,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2024-11-20 04:30:00+00:00",
+        "validation_start": "2024-09-25 04:30:00+00:00",
+        "test_start": "2024-11-30 18:30:00+00:00",
+        "test_end": "2024-12-31 18:30:00+00:00"
+      },
+      {
+        "number": 5,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2024-12-21 04:30:00+00:00",
+        "validation_start": "2024-10-26 04:30:00+00:00",
+        "test_start": "2024-12-31 18:30:00+00:00",
+        "test_end": "2025-01-31 18:30:00+00:00"
+      },
+      {
+        "number": 6,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2025-01-21 04:30:00+00:00",
+        "validation_start": "2024-11-26 04:30:00+00:00",
+        "test_start": "2025-01-31 18:30:00+00:00",
+        "test_end": "2025-02-28 18:30:00+00:00"
+      },
+      {
+        "number": 7,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2025-02-18 04:30:00+00:00",
+        "validation_start": "2024-12-24 04:30:00+00:00",
+        "test_start": "2025-02-28 18:30:00+00:00",
+        "test_end": "2025-03-31 18:30:00+00:00"
+      },
+      {
+        "number": 8,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2025-03-21 04:30:00+00:00",
+        "validation_start": "2025-01-24 04:30:00+00:00",
+        "test_start": "2025-03-31 18:30:00+00:00",
+        "test_end": "2025-04-30 18:30:00+00:00"
+      },
+      {
+        "number": 9,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2025-04-20 04:30:00+00:00",
+        "validation_start": "2025-02-23 04:30:00+00:00",
+        "test_start": "2025-04-30 18:30:00+00:00",
+        "test_end": "2025-05-31 18:30:00+00:00"
+      },
+      {
+        "number": 10,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2025-05-21 04:30:00+00:00",
+        "validation_start": "2025-03-26 04:30:00+00:00",
+        "test_start": "2025-05-31 18:30:00+00:00",
+        "test_end": "2025-06-30 18:30:00+00:00"
+      },
+      {
+        "number": 11,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2025-06-20 04:30:00+00:00",
+        "validation_start": "2025-04-25 04:30:00+00:00",
+        "test_start": "2025-06-30 18:30:00+00:00",
+        "test_end": "2025-07-31 18:30:00+00:00"
+      },
+      {
+        "number": 12,
+        "train_start": "2019-12-31 18:30:00+00:00",
+        "train_end": "2025-07-21 04:30:00+00:00",
+        "validation_start": "2025-05-26 04:30:00+00:00",
+        "test_start": "2025-07-31 18:30:00+00:00",
+        "test_end": "2025-08-31 18:30:00+00:00"
+      }
+    ]
+  },
+  "input_dvc_pointer_sha256": {
+    "data/raw/demand_IN-EA.parquet.dvc": "580b4a456081c518a9605b0f078bdea6c1c0ef15b865f57f42d6221b4a8846a3",
+    "data/raw/demand_IN-NE.parquet.dvc": "fa8a5af64a00b769bacbf63c8b5f1ee6eee92af76522bbe6c8f3521fbb15b344",
+    "data/raw/demand_IN-NO.parquet.dvc": "09b102a7a9c74735fdc90c5a4c3d0d355e4a8c8433efb59b0aeae37ec91eb911",
+    "data/raw/demand_IN-SO.parquet.dvc": "44647ae41b482b6050beac233d1eba045a10309a7c8221067562e4d57d0d7432",
+    "data/raw/demand_IN-WE.parquet.dvc": "cc703d8e4feeb89d963e8837607cf321ade7b989becfe2a80f642946a918f968",
+    "data/raw/demand_revisions.dvc": "573c14a0d8975036f87b73f6face5af88dfcf068b501206fe5b50da729fc9229",
+    "data/raw/forecast_vintages.dvc": "7266ebb49a309d6f6bcd9f221cd610a3da5e51c591ffddcbc36bbe877a0a5b33",
+    "data/raw/forecast_vintages_recovered.dvc": "c2415b9243b932b341d3ebbb152a232cd0c369d2fe876a65fffd68f9781ea13f",
+    "data/raw/weather_IN-EA.parquet.dvc": "1de22c3f3d197aacf094533889527cf1f12796e80f8ab79edfe2e08f8b89ef08",
+    "data/raw/weather_IN-NE.parquet.dvc": "8faa5878e7a5b2be843cb489cdf624466c92b6d22147b195a004c667d85ace54",
+    "data/raw/weather_IN-NO.parquet.dvc": "d112d0a5d179bb5f8cf2c12a0d9c512e8c532d854748f7b52c435138eac6d65a",
+    "data/raw/weather_IN-SO.parquet.dvc": "a707b0738c4574848c17f55c0020c53c0d1d21c52a225c89202d0e1c31ce4cb9",
+    "data/raw/weather_IN-WE.parquet.dvc": "68175de6078fcd819870219aa28d38f9865c6944d9558ffd888bc27f69423ee3"
+  },
+  "input_parquet_sha256": {
+    "data/raw/demand_IN-NO.parquet": "7a44a483b2c84bffa3183f00bb0638353b1f9530f9491db118d75e241a006da0",
+    "data/raw/demand_IN-WE.parquet": "7e963bc7a6a9d92b1d4adadbf230190e6083f35e3694dd97c9372793cdf90e13",
+    "data/raw/demand_IN-SO.parquet": "a0740addb4a58ff00ca23fd550921a3c1452f3ac4dba3f54509bda0b6bbbe7ec",
+    "data/raw/demand_IN-EA.parquet": "ba159461bf342b7e1c4670311318cbe447c367bac2908fff20bb33db6629b2be",
+    "data/raw/demand_IN-NE.parquet": "dc3c1bf1a48fa6e0a73fa3a0676c766a3a79458cb99ecda660f1209296cd3718",
+    "data/raw/weather_IN-NO.parquet": "155f53043d23637661c9075ee88aba0f3476ee73544e7d78ec973a204f69d1a4",
+    "data/raw/weather_IN-WE.parquet": "ce8658ab2ebe5d9367880706c535053bb2c5659e174607f8b573ffe94c8ee43c",
+    "data/raw/weather_IN-SO.parquet": "ec703ee18c5399a59c043530c659c406d925c0d5fa0528d02a3566efe2f2dd75",
+    "data/raw/weather_IN-EA.parquet": "f898b7269906447cdc3609e7e551b608cfc10f3c2b0d7f0f1d497b0eb92df3ef",
+    "data/raw/weather_IN-NE.parquet": "c7620c6000fe7cd23c099ab926b857c9538a2aec9dcdba5f83abdf9fcca8aa3e",
+    "data/raw/demand_revisions/2026-09-13.parquet": "76e2e1f515ab7e902495e34d3787345702d83b93158c07762cf8f89a92b8cc8d"
+  },
+  "source_sha256": {
+    "src/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/backtest/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/backtest/metrics.py": "d88003ae2af22d946bb9587ea6852819ce6b39a200c8fa0c61c0d0ba624ac2db",
+    "src/backtest/run.py": "24704828652809dfc85b1902d84223b07cfa93a91a6d54c31736d92635475c05",
+    "src/backtest/splits.py": "3d3a53feed615953fb81ab77952cded7be3c0ff8c7ea1ceb6a51d5b49be01855",
+    "src/config.py": "d7ffca8bc6479f7b3188da8d6951ee2dd044e5ae5da40feac25971919a364066",
+    "src/features/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/features/build.py": "68c5ff89f9ac32e8138d41fdba44860821e4a9aa02ce68f67e7fbaa6ee85779b",
+    "src/features/forecast_noise.py": "8694652c50d159eccb89288689cddc15bbae69d8a09ddba9a0ef355f691d5af0",
+    "src/features/weather_feats.py": "c120d028879906a45543b8bd5b78228fa0a109ab993adfd48c526b3ca8fbb9ef",
+    "src/ingest/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/ingest/archive.py": "4f6cda1f15cd2a5714d2c4e4eac59fdb9155f5b364d026a519c375981d5ce31b",
+    "src/ingest/calendar_in.py": "46ae4b4947f27e1674d7bcc404f35279a14552a7bbf6ccd611cdf12244931ae1",
+    "src/ingest/electricity_maps.py": "296d0f49ac33f4d0368803e14bb79ff218a64afb3675f089c52b391d1dabec33",
+    "src/ingest/weather.py": "cbb31c0d7265e0936c07a45939d0c881958f4b5b22c12cc4337ceaebc320bdc0",
+    "src/jobs/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/jobs/daily.py": "a088e9a6228ab232ca42ed6563d410f61df4f3520547f9211ad6578979414054",
+    "src/jobs/train.py": "a9f6f549bb345e65b763209e1ab471f6b5a3ee02964cb34f9f93ceb3447344a3",
+    "src/models/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/models/baselines.py": "70f15c49e2dff716867dbd796ad819308b5114de01b88a79fef69d79c603ea7b",
+    "src/models/hybrid.py": "bd351cf511c2af50504e1bee2735eba834aa49dd9d0e90862b59765c00042d21",
+    "src/monitor/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/monitor/drift.py": "3f4837ebf82c6ff2087b436e3514541311bb1368230211dd848cd9ef5a4f3a67",
+    "src/monitor/registry.py": "057c24152b8014750b216bc4884e1d9f8327f82211185b9080b59d586cd478cf",
+    "src/records.py": "c961eab77682fb238ef8c721e73999d8a9f7e28aef5b1a177b7204815bafffbe",
+    "src/tracking.py": "3ae6ec37d62587032223a1e45661f2b13f44e41b95ef8a9c2f082e014e04b73d",
+    "src/validate.py": "12f75559c17b5ddcd17b57ec9c3cbbff62618847c3ee6af1dd3f80bad3c1a77d",
+    "src/viz/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "src/viz/dashboard.py": "7eca2a60e04ac247ecd9d3d98bfc087abc1a5f43da00c0b7d7d7af3d9d046b4d",
+    "src/viz/plots.py": "392e63373d432bd46c20c4c0c4c090358e4c2f6215b504d31490d121a6f8ec34",
+    "scripts/ablate.py": "1d29d9b91310fd879ee6fbc73a7e7011e92605bbfe040e1fd7acb538f33dc028",
+    "scripts/archive_daily.py": "125a317f399fa8a7caf4bb56a716800182b8940292c03f97a8d8ec46cfff5659",
+    "scripts/audit.py": "b2f39a61929683ead24d7253e4d35a110017c340df09ab9998f53a6c14c2da1a",
+    "scripts/backfill.py": "9563388e5525f32d3e91bf22101666059fac78f9b93171b5dcb998585739dec6",
+    "scripts/backfill_vintages.py": "113104958591e9b87be6aee1d80e81c559f9f73917da8272e415e1b6dc4bb6ac",
+    "scripts/backfill_weather.py": "7082311acc04179f37ba00dd6356334c1401ff8cb0f1511f29ababcd08ba8bfd",
+    "scripts/backtest_baselines.py": "984a661a3110435d0fc9e479605ebdb0a923bbed058faa10c88071c8e8b65a28",
+    "scripts/backtest_model.py": "5c85f176f9d25f17706ebcd930f12e1493a206df6faa514139c35baea7670a31",
+    "scripts/calibrate.py": "7009eeaa0a1aed58699a1de115d086d76399e6c8430312572b77712e35a3d5d8",
+    "scripts/catch_up.py": "aec10795260e1510158e551d95042a3b01ee528ff054424460d42062a0f88bc4",
+    "scripts/check_weather.py": "9d6da4e5034c346ae623849e6068e6b9253c01486e8180c21cbe3b057fd371b5",
+    "scripts/daily.py": "fc05ffd05c0aa7cc77068fa4771ed9ac78c4c2a18b295ad8f9b5f708ffbf18c4",
+    "scripts/deployment_ready.py": "2cb2cea25bc372fa2b4ebdaa442df4a228cdb153e6f737409f95dbd659aae517",
+    "scripts/diagnose_linear.py": "c9053ff5d1ea28e2b5cc21694847e863bf21105be78cea355d8b2efbcc0ac1a9",
+    "scripts/holdout.py": "b6d4f1f8856ff08ce1b50a5200b9fd59b3fb32140144fd8652c3ee687d28eb8a",
+    "scripts/measure_step0.py": "5224132c87d331a7feb973f990580c73a94631869b25389e01bb14334ed78c1a",
+    "scripts/model_card.py": "7c6745316676ce94886625ee722fd9e4b4c9f10b967b2c892b52107b506cf4e7",
+    "scripts/replay.py": "91f5d6e0d01c237b51764ba906ff738bffb9159a2c218da7b10e5f27b914e5ac",
+    "scripts/report.py": "d59fd5abe4aacaf785d7af868692fbe85dd4886727c9bc18aa6db1902dd635a6",
+    "scripts/retry_due.py": "92af1db97810476f85711e7984aa458d07474a07e51366bd19824dfc38b1ea41",
+    "scripts/train.py": "7a9b7f22d6ee07034fef8df4658609753d61c009c60aa5c55fa654fcaad0d64b",
+    "scripts/tune.py": "d617dd6fe5331c903780000fc79ba5e9c2f7a07df922d34e64dab5a123b51939",
+    "scripts/verify_em.py": "66897b674ca29b6629d5d46ba7d5f0375c04b24c5017b6d9f483dbf7eeb5aa41",
+    "config/config.yaml": "74988d16cf61e31540dd24501154bf4aeb900417c1923f6bc5e2c049bd52d8e2",
+    "data/external/festivals_in.csv": "b8ed4301264f63bf8883368153c2961031fcad38a1807a3d11d8c01f11f7967c"
+  },
+  "weather_source": "constant-sigma simulated forecast bridge",
+  "holdout_scored": false
+}
