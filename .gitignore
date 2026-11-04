@@ -30,3 +30,14 @@ state/.daily.lock
 reports/tuning/*.sqlite3
 reports/tuning/*.sqlite3-*
 /mlruns
+
+# Local development assistants and session notes
+AGENTS.md
+CLAUDE.md
+.codex/
+.claude/
+.agents/
+.cursor/
+/.github/copilot-instructions.md
+/reports/execution_handoff.md
+/reports/implementation_files.json

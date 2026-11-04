@@ -1,7 +1,6 @@
 # Implementation Decisions
 
-2026-11-04. The owner authorized autonomous completion across the remaining
-stages, including routine decisions and bug fixes, without intermediate review.
+Technical decisions and validation findings recorded on 2026-11-04.
 The earlier suspected-demand-suppression rule remains removed.
 
 ## Tuning Window
@@ -85,4 +84,4 @@ Late observed weather enriches analysis context in memory without rewriting froz
 
 The calibrated replay has zero healthy alarm episodes in 365 days, against a two-per-year budget; injected 2/5/10-percent shifts were detected after 30/23/18 days, excluding settlement lag. Exact first-settlement replay is unavailable, so thresholds remain provisionally optimistic. Counterfactual recovery uses precomputed chronological refits and does not substitute for live training or deployment. Local and Linux metrics agree to three decimals.
 
-Local DVC pointers and the consistent 100-trial study snapshot were written. Remote upload remains unverified because existing Drive authentication returns invalid_grant. Public GitHub HTML independently confirms archive run 58 failed in remote configuration and upload. No Git staging, commit, push, GitHub API or token access was performed.
+Local DVC pointers and the consistent 100-trial study snapshot were written. Remote upload remains unverified because existing Drive authentication returns invalid_grant. Public GitHub HTML independently confirms archive run 58 failed in remote configuration and upload.

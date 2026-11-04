@@ -1,18 +1,16 @@
 # gridcast — Project Context
 
-**Audience:** any agent or person working on this repository.
+**Audience:** project contributors and maintainers.
 Read this file completely before writing code.
 
 ---
 
 ## 0. How to use this document
 
-**Owner authorization, 2026-11-04:** complete the remaining project without
-manual approval at each stage. Resolve routine implementation choices and
-document evidence and limitations in `reports/implementation_decisions.md`.
-The measured-only pre-test tuning amendment in that report supersedes the
-unusable earliest-year tuning interval. No performance or deployment gate may
-be marked passed without evidence. INV-8's observation-retention decision stays.
+**Tuning protocol amendment, 2026-11-04:** the measured-only pre-test tuning
+amendment in `reports/implementation_decisions.md` supersedes the unusable
+earliest-year tuning interval. Performance and deployment gates require
+evidence. INV-8's observation-retention decision remains in effect.
 
 - **RULE** lines are binding. Do not violate them, do not "improve" on them.
 - *Rationale* notes explain why a rule exists. They are context, not licence
@@ -2010,11 +2008,10 @@ predictions. **Not yet verified** — history depth unconfirmed.
 
 - Development machine: macOS, Homebrew Python. System-wide `pip install` is
   refused (PEP 668). Use the project venv via `make setup`.
-- Assistant sandboxes **without network access** block `api.electricitymap.org`
-  and `open-meteo.com` at an egress proxy. This is a property of the sandbox, not
-  of assistants in general: an assistant running directly on the development
-  machine reaches both hosts normally. Verify with a probe rather than assuming
-  either way — see the step-0 RULE in section 12. All other work needs no network.
+- Restricted development environments may block `api.electricitymap.org`
+  and `open-meteo.com` at an egress proxy. Verify API access with a probe
+  rather than assuming it — see the step-0 RULE in section 12. All other
+  work needs no network.
 
 ---
 
@@ -2139,9 +2136,9 @@ stays false until then.
 
 **RULE** Both step-0 commands must be run on a machine with network access to
 both API hosts. Verify that access with a probe before assuming it — some
-assistant sandboxes are behind an egress proxy that blocks both (see section 11,
-Environment) and some are not. Everything after step 0 operates on cached files
-and needs no network.
+development environments are behind an egress proxy that blocks both (see
+section 11, Environment) and some are not. Everything after step 0 operates
+on cached files and needs no network.
 
 ### Milestones
 
