@@ -1,0 +1,197 @@
+{
+  "saved_predictions_only": true,
+  "holdout_rerun": false,
+  "all_match": true,
+  "comparisons": [
+    {
+      "model": "history_mean_2",
+      "metric": "n_rows",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "mape_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "rmse_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "mase",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "rmsse",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "signed_bias_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "shortfall_freq_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "p95_abs_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "rmse_mae_ratio",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "baseline_mape_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "n_peak_days",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "peak_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "peak_mape_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "baseline_peak_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "n_ramps",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "ramp_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "baseline_ramp_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "history_mean_2",
+      "metric": "ramp_mase",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "n_rows",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "mape_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "rmse_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "mase",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "rmsse",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "signed_bias_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "shortfall_freq_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "p95_abs_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "rmse_mae_ratio",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "baseline_mape_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "n_peak_days",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "peak_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "peak_mape_pct",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "baseline_peak_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "n_ramps",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "ramp_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "baseline_ramp_mae_mw",
+      "match_to_3_decimals": true
+    },
+    {
+      "model": "seasonal_naive",
+      "metric": "ramp_mase",
+      "match_to_3_decimals": true
+    }
+  ]
+}

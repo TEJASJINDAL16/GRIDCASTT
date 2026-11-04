@@ -18,3 +18,12 @@ __pycache__
 docs
 notebooks
 .DS_Store
+client_secret*.json
+AGENTS.md
+CLAUDE.md
+.codex
+.claude
+.agents
+.cursor
+reports/execution_handoff.md
+reports/implementation_files.json

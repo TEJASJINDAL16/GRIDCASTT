@@ -1,0 +1,9 @@
+{
+  "start": "2025-08-31 18:30:00+00:00",
+  "end_exclusive": "2026-08-31 18:30:00+00:00",
+  "expected_rows": 43800,
+  "available_feature_rows": 43800,
+  "measured_common_rows": 43288,
+  "unmeasured_rows": 512,
+  "missing_history_rows": 0
+}

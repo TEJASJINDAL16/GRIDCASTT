@@ -4,3 +4,5 @@
 /model_initial_capped_predictions.parquet
 /tuning_study.sqlite3
 /repro_linux
+/refinement_predictions.parquet
+/holdout_history_predictions.parquet

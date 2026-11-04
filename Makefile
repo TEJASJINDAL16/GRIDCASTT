@@ -137,3 +137,18 @@ clean:  ## Remove the virtual environment and caches
 	rm -rf $(VENV)
 	find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 	find . -name .pytest_cache -type d -exec rm -rf {} + 2>/dev/null || true
+
+.PHONY: refine-model
+refine-model:  ## Compare availability-safe demand-history candidates
+	$(PY) scripts/refine_model.py
+
+.PHONY: configure-drive
+configure-drive:  ## Import a downloaded Desktop OAuth client JSON (ARGS=path)
+	$(PY) scripts/configure_drive.py $(ARGS)
+
+.PHONY: history-metrics history-holdout
+history-metrics:  ## Full metric breakdown for the frozen history candidate
+	$(PY) scripts/evaluate_history.py
+
+history-holdout:  ## Evaluate the fixed history candidate on the reserved year once
+	$(PY) scripts/evaluate_history.py --final-holdout

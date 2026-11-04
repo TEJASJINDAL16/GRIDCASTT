@@ -1,0 +1,122 @@
+[
+  {
+    "fold": 1,
+    "train_end": "2024-08-21 04:30:00+00:00",
+    "windows": {
+      "IN-EA": 1
+    }
+  },
+  {
+    "fold": 2,
+    "train_end": "2024-09-20 04:30:00+00:00",
+    "windows": {
+      "IN-EA": 4
+    }
+  },
+  {
+    "fold": 3,
+    "train_end": "2024-10-21 04:30:00+00:00",
+    "windows": {
+      "IN-EA": 1
+    }
+  },
+  {
+    "fold": 4,
+    "train_end": "2024-11-20 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 1,
+      "IN-WE": 1,
+      "IN-SO": 1,
+      "IN-EA": 1,
+      "IN-NE": 1
+    }
+  },
+  {
+    "fold": 5,
+    "train_end": "2024-12-21 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 2,
+      "IN-WE": 1,
+      "IN-SO": 1,
+      "IN-EA": 4,
+      "IN-NE": 4
+    }
+  },
+  {
+    "fold": 6,
+    "train_end": "2025-01-21 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 4,
+      "IN-WE": 1,
+      "IN-SO": 1,
+      "IN-EA": 2,
+      "IN-NE": 2
+    }
+  },
+  {
+    "fold": 7,
+    "train_end": "2025-02-18 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 4,
+      "IN-WE": 2,
+      "IN-SO": 1,
+      "IN-EA": 2,
+      "IN-NE": 2
+    }
+  },
+  {
+    "fold": 8,
+    "train_end": "2025-03-21 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 1,
+      "IN-WE": 4,
+      "IN-SO": 2,
+      "IN-EA": 1,
+      "IN-NE": 4
+    }
+  },
+  {
+    "fold": 9,
+    "train_end": "2025-04-20 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 2,
+      "IN-WE": 2,
+      "IN-SO": 2,
+      "IN-EA": 2,
+      "IN-NE": 4
+    }
+  },
+  {
+    "fold": 10,
+    "train_end": "2025-05-21 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 2,
+      "IN-WE": 4,
+      "IN-SO": 2,
+      "IN-EA": 2,
+      "IN-NE": 4
+    }
+  },
+  {
+    "fold": 11,
+    "train_end": "2025-06-20 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 4,
+      "IN-WE": 1,
+      "IN-SO": 2,
+      "IN-EA": 2,
+      "IN-NE": 4
+    }
+  },
+  {
+    "fold": 12,
+    "train_end": "2025-07-21 04:30:00+00:00",
+    "windows": {
+      "IN-NO": 4,
+      "IN-WE": 1,
+      "IN-SO": 1,
+      "IN-EA": 2,
+      "IN-NE": 1
+    }
+  }
+]

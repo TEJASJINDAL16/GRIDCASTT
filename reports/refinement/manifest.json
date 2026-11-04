@@ -1,0 +1,14 @@
+{
+  "sha256": {
+    "src/models/history.py": "a384aecc1b73a479e5b6ae22021b31b12f3b2c87702da9a768977e1f2a0fe794",
+    "scripts/refine_model.py": "d3467f184b00885558d974dd4a4577d039a47e8b0e9e5ba1d8132002624ccc4b",
+    "config/config.yaml": "1ec03ac9baf723352c64634d2c6b53086cbb5de63777da2f939605d1c24eca76",
+    "reports/research_protocol.json": "7ecdfe9ec541d7b4fcdbfe532e03e968cc04706bbc426fa9c12f188ff9332e43",
+    "data/interim/model_predictions.parquet.dvc": "baf7a85f4074a14d2a1af201a85a4abe4430e9504d4abcf13b69fba64bb10af5",
+    "data/interim/refinement_predictions.parquet.dvc": "44fb4fcaa60c96cbce33bc6f06f3279a3dc1d956cfea816a176f2fe0460c5790"
+  },
+  "holdout_evaluated": false,
+  "production_approved": false,
+  "development_choice": "history_mean_2",
+  "selection_caveat": "Choice informed by development comparison; early validation selected history_mean_4."
+}

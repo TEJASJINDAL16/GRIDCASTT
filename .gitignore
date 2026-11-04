@@ -41,3 +41,6 @@ CLAUDE.md
 /.github/copilot-instructions.md
 /reports/execution_handoff.md
 /reports/implementation_files.json
+
+# Downloaded OAuth client credentials
+/client_secret*.json

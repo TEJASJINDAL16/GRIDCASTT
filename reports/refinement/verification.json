@@ -1,0 +1,12 @@
+{
+  "local_tests_passed": 195,
+  "local_test_warnings": 5,
+  "lint_passed": true,
+  "dvc_tracked": true,
+  "remote_upload_succeeded": true,
+  "remote_upload_error": null,
+  "production_approved": false,
+  "holdout_scored": false,
+  "remote_upload_verified_at": "2026-11-04T04:43:04.683600+00:00",
+  "oauth_import_checks_passed": 27
+}

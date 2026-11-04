@@ -2621,3 +2621,14 @@ adds them; they must not require a redesign.
 No map — five zones is a bar chart and a map is decoration. No live updating, no
 websockets, no authentication, no interactivity beyond the zone toggle and
 hover.
+
+## Model refinement scope - 2026-11-04
+
+Demand-history features and alternative model architectures are now permitted
+for development experiments. This supersedes the Phase 1 prohibition on demand
+lags and the fixed hybrid architecture for these experiments. Availability,
+measured-target scoring, chronological validation, baseline comparisons and
+production promotion gates still apply. Previous-day final demand must not be
+assumed available. Keep the final holdout reserved and document every experiment
+in `reports/model_refinement_story.md`. A candidate's research result does not
+automatically approve production use or replace its feature contract.

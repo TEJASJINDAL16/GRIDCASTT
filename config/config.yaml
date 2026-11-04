@@ -389,3 +389,16 @@ runtime:
   threshold_scale_bounds: [0.5, 1.5]
   replay_stress_pct: 50  # Functional recovery stress case, never a skill estimate
   debounce_candidates: [1, 2, 3, 5, 7]
+
+# Demand-history research, authorized 2026-11-04. Fixed before new fold evaluation.
+refinement:
+  averaging_windows: [1, 2, 4]
+  adaptive_validation_weeks: 8
+  history_count: 4
+  minimum_training_rows: 200
+  lightgbm:
+    n_estimators: 200
+    num_leaves: 15
+    learning_rate: 0.03
+    min_child_samples: 100
+    reg_lambda: 10.0

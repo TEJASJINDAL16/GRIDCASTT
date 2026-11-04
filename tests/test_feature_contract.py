@@ -217,10 +217,14 @@ def test_builds_from_the_real_cache(cfg, project_root):
     wpath = project_root / "data" / "raw" / "weather_IN-NO.parquet"
     if not dpath.exists() or not wpath.exists():
         pytest.skip("cache absent")
-    demand = pd.read_parquet(dpath).tail(2000)
-    weather = pd.read_parquet(wpath).tail(2000)
+    demand = pd.read_parquet(dpath)
+    weather = pd.read_parquet(wpath)
+    # Cache endpoints advance independently; compare the same historical hours.
+    common = pd.Index(demand.datetime_utc).intersection(weather.datetime_utc).sort_values()[-2000:]
+    demand = demand.loc[demand.datetime_utc.isin(common)]
+    weather = weather.loc[weather.datetime_utc.isin(common)]
     built = build_features(weather, cfg, demand)
-    assert len(built) > 1000
+    assert len(built) == len(common) > 1000
     assert list(feature_matrix(built).columns) == FEATURE_COLUMNS
     assert built[FEATURE_COLUMNS].notna().all().all()
     assert trainable_mask(built, cfg).any()

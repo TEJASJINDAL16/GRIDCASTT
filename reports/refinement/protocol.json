@@ -1,0 +1,32 @@
+{
+  "selected_on_pretest_validation": "history_mean_4",
+  "validation_mase": {
+    "seasonal_naive": 1.0,
+    "history_mean_2": 0.9815682704939197,
+    "history_mean_4": 0.9740241344012178,
+    "history_residual": 1.3684165406145838
+  },
+  "validation_rows": 2184,
+  "validation_zones": [
+    "IN-EA"
+  ],
+  "settings": {
+    "averaging_windows": [
+      1,
+      2,
+      4
+    ],
+    "adaptive_validation_weeks": 8,
+    "history_count": 4,
+    "minimum_training_rows": 200,
+    "lightgbm": {
+      "n_estimators": 200,
+      "num_leaves": 15,
+      "learning_rate": 0.03,
+      "min_child_samples": 100,
+      "reg_lambda": 10.0
+    }
+  },
+  "holdout_scored": false,
+  "selection_frozen_before_folds": true
+}

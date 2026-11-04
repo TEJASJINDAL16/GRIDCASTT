@@ -1,0 +1,27 @@
+{
+  "candidate": "history_mean_2",
+  "window": 2,
+  "frozen_at": "2026-11-04T04:48:47.173569+00:00",
+  "status": "complete",
+  "holdout_evaluated": true,
+  "selection_disclosure": "Two-observation candidate selected after examining development folds; early Eastern-only validation preferred four.",
+  "purge_gap_days": 10,
+  "source_sha256": {
+    "src/models/history.py": "a384aecc1b73a479e5b6ae22021b31b12f3b2c87702da9a768977e1f2a0fe794",
+    "scripts/evaluate_history.py": "0cbecb2882fa378adb5c65ce8ecb221df5bdbe7414bd11aefd0345644a4ab300",
+    "config/config.yaml": "1ec03ac9baf723352c64634d2c6b53086cbb5de63777da2f939605d1c24eca76"
+  },
+  "completed_at": "2026-11-04T04:49:01.909755+00:00",
+  "report": "reports/holdout_history/report.md",
+  "coverage": {
+    "start": "2025-08-31 18:30:00+00:00",
+    "end_exclusive": "2026-08-31 18:30:00+00:00",
+    "expected_rows": 43800,
+    "available_feature_rows": 43800,
+    "measured_common_rows": 43288,
+    "unmeasured_rows": 512,
+    "missing_history_rows": 0
+  },
+  "diagnostic_pass": true,
+  "production_approved": false
+}

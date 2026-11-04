@@ -1,0 +1,25 @@
+{
+  "verified_at": "2026-11-04T04:51:26.191332+00:00",
+  "local": {
+    "tests": 197,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 197
+  },
+  "container": {
+    "tests": 197,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "passed": 195
+  },
+  "lint_passed": true,
+  "pip_check_passed": true,
+  "linux_saved_metrics_match_to_3_decimals": true,
+  "linux_metric_comparisons": 38,
+  "holdout_evaluated_once": true,
+  "holdout_artifact_uploaded": true,
+  "production_approved": false,
+  "container_method": "Existing pinned verification image with current source, tests and required data mounted; not a newly published image."
+}

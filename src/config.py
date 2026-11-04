@@ -160,9 +160,7 @@ def get_api_key(name: str = "EM_API_KEY") -> str:
                 if found:
                     return found
 
-    raise RuntimeError(
-        f"{name} not found. Copy .env.example to .env and add your key."
-    )
+    raise RuntimeError(f"{name} not found. Copy .env.example to .env and add your key.")
 
 
 def update_values(values: dict, path: pathlib.Path = CONFIG_PATH) -> None:
@@ -174,10 +172,12 @@ def update_values(values: dict, path: pathlib.Path = CONFIG_PATH) -> None:
         node = root
         for part in dotted.split("."):
             node = next(v for k, v in node.value if k.value == part)
-        rendered = yaml.safe_dump(value, default_flow_style=True).strip().removesuffix("...").strip()
+        rendered = (
+            yaml.safe_dump(value, default_flow_style=True).strip().removesuffix("...").strip()
+        )
         if isinstance(node, (yaml.MappingNode, yaml.SequenceNode)):
-            original = source[node.start_mark.index:node.end_mark.index]
-            rendered += original[len(original.rstrip()):]
+            original = source[node.start_mark.index : node.end_mark.index]
+            rendered += original[len(original.rstrip()) :]
         edits.append((node.start_mark.index, node.end_mark.index, rendered))
     for start, end, rendered in sorted(edits, reverse=True):
         source = source[:start] + rendered + source[end:]
@@ -188,3 +188,40 @@ def configure_tracking() -> None:
     """Explicitly enable the specified local file store in MLflow 3.16."""
     os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
     os.environ["MLFLOW_DISABLE_AGENT_HINT"] = "1"
+
+
+def configure_gdrive_oauth(client_file: pathlib.Path) -> pathlib.Path:
+    """Import a downloaded OAuth client locally without exposing its values.
+
+    A fresh credential file avoids reusing a token containing an old secret.
+    Neither the client file nor the resulting token may be committed.
+    """
+    import json
+    import tempfile
+
+    from dvc.config import Config
+
+    document = json.loads(client_file.read_text(encoding="utf-8"))
+    client = document.get("installed")
+    if not isinstance(client, dict):
+        raise ValueError("Expected a Google Desktop OAuth client JSON file")
+    values = [client.get(name) for name in ("client_id", "client_secret")]
+    if any(
+        not isinstance(value, str)
+        or not value
+        or not value.isascii()
+        or any(c.isspace() for c in value)
+        for value in values
+    ):
+        raise ValueError("OAuth client ID or secret is missing or malformed")
+    temporary = PROJECT_ROOT / ".dvc" / "tmp"
+    temporary.mkdir(parents=True, exist_ok=True)
+    credentials = (
+        pathlib.Path(tempfile.mkdtemp(prefix="oauth-", dir=temporary)) / "credentials.json"
+    )
+    config = Config(dvc_dir=str(PROJECT_ROOT / ".dvc"))
+    with config.edit("local") as local:
+        remote = local.setdefault("remote", {}).setdefault("gdrive", {})
+        remote["gdrive_client_id"], remote["gdrive_client_secret"] = values
+        remote["gdrive_user_credentials_file"] = str(credentials)
+    return credentials
