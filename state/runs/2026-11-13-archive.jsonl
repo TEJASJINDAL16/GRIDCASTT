@@ -1,0 +1,1 @@
+{"run_at": "2026-11-13T12:28:32.324701+00:00", "job": "archive_daily", "parts": {"forecast_vintage": 1536, "observed_weather": 0, "demand_revisions": 2520}, "failed_zones": {"forecast_vintage": ["IN-NE"], "observed_weather": [], "demand_revisions": []}, "outcome": "degraded"}
